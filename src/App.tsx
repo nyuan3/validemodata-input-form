@@ -96,8 +96,8 @@ function cn(...classes: (string | undefined | false)[]): string {
   return classes.filter(Boolean).join(' ')
 }
 
-// ---------- Mock data ----------
-const MOCK_PROFILE: ClientProfile = {
+// ---------- Demo data ----------
+const DEMO_PROFILE: ClientProfile = {
   firstName: 'Maria',
   middleName: 'Elena',
   lastName: 'Santos',
@@ -157,6 +157,70 @@ const MOCK_PROFILE: ClientProfile = {
   previousLocation: 'LA County',
   translationNeeded: 'Yes',
   preferredLanguage: 'Spanish',
+  preferredLanguageOther: '',
+}
+
+// ---------- Empty profile ----------
+const EMPTY_PROFILE: ClientProfile = {
+  firstName: '',
+  middleName: '',
+  lastName: '',
+  suffix: '',
+  alias: '',
+  nameQuality: '',
+  dateOfBirth: '',
+  dobQuality: '',
+  ssn: '',
+  ssnQuality: '',
+  gender: [],
+  genderOther: '',
+  pronouns: '',
+  sex: '',
+  raceEthnicity: [],
+  tribalAffiliation: '',
+  primaryLanguage: '',
+  primaryLanguageOther: '',
+  hasDisability: '',
+  needsMobilityAccommodations: '',
+  mobilityFeatures: [],
+  mobilityFeaturesOther: '',
+  sensoryAccommodations: [],
+  veteranStatus: '',
+  branch: '',
+  discharge: '',
+  vashStatus: '',
+  emergencyContact: { name: '', phone: '', email: '' },
+  householdComposition: [],
+  priorLivingSituation: '',
+  lengthOfStay: '',
+  firstTimeHomeless: '',
+  timesHomelessPastYear: '',
+  timesHomelessPast3Years: '',
+  monthsHomelessPast3Years: '',
+  physicalDisability: '',
+  chronicHealthCondition: '',
+  hivAids: '',
+  mentalHealthDisorder: '',
+  substanceUse: '',
+  survivorOfDV: '',
+  dvHowLongAgo: '',
+  currentlyFleeing: '',
+  currentlyEmployed: '',
+  employmentType: '',
+  cashIncomeSources: [],
+  cashIncomeOther: '',
+  nonCashBenefits: [],
+  nonCashOther: '',
+  coveredByInsurance: '',
+  insuranceTypes: [],
+  insuranceOther: '',
+  highestEducation: '',
+  sexualOrientation: '',
+  sexualOrientationOther: '',
+  livedOutsideLACounty: '',
+  previousLocation: '',
+  translationNeeded: '',
+  preferredLanguage: '',
   preferredLanguageOther: '',
 }
 
@@ -265,12 +329,14 @@ function ProfileHeader({
   status,
   onSave,
   onReset,
+  onLoadDemo,
   validationErrors,
 }: {
   profile: ClientProfile
   status: ProfileStatus
   onSave: () => void
   onReset: () => void
+  onLoadDemo: () => void
   validationErrors: string[]
 }) {
   const displayName = [profile.firstName, profile.lastName].filter(Boolean).join(' ') || 'New client'
@@ -294,6 +360,9 @@ function ProfileHeader({
         {validationErrors.length > 0 && (
           <span className="text-sm text-amber-600">{validationErrors.length} required</span>
         )}
+        <button type="button" onClick={onLoadDemo} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" aria-label="Load demo data">
+          Load Demo
+        </button>
         <button type="button" onClick={onReset} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" aria-label="Reset">
           <RotateCcw className="h-4 w-4" />
           Reset
@@ -348,7 +417,7 @@ function validateProfile(p: ClientProfile): string[] {
 
 // ---------- Main App ----------
 export default function App() {
-  const [clientProfile, setClientProfile] = useState<ClientProfile>(() => ({ ...MOCK_PROFILE }))
+  const [clientProfile, setClientProfile] = useState<ClientProfile>(() => ({ ...EMPTY_PROFILE }))
   const [profileStatus, setProfileStatus] = useState<ProfileStatus>('Draft')
   const [jsonPreviewOpen, setJsonPreviewOpen] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -373,7 +442,12 @@ export default function App() {
   }, [clientProfile])
 
   const handleReset = useCallback(() => {
-    setClientProfile({ ...MOCK_PROFILE })
+    setClientProfile({ ...EMPTY_PROFILE })
+    setProfileStatus('Draft')
+  }, [])
+
+  const handleLoadDemo = useCallback(() => {
+    setClientProfile({ ...DEMO_PROFILE })
     setProfileStatus('Draft')
   }, [])
 
@@ -427,7 +501,7 @@ export default function App() {
       <header className="flex h-12 items-center bg-[#3C474E] px-6">
         <span className="text-base font-medium text-white">Demo Agency</span>
       </header>
-      <ProfileHeader profile={clientProfile} status={profileStatus} onSave={handleSave} onReset={handleReset} validationErrors={errors} />
+      <ProfileHeader profile={clientProfile} status={profileStatus} onSave={handleSave} onReset={handleReset} onLoadDemo={handleLoadDemo} validationErrors={errors} />
       {saved && <div className="bg-emerald-600 px-6 py-2 text-center text-sm font-medium text-white">Profile saved.</div>}
 
       <div className="flex flex-1">
@@ -435,7 +509,8 @@ export default function App() {
           <StickySectionNav sections={SECTIONS} currentSectionId={currentSectionId} onSectionChange={setCurrentSectionId} />
         </aside>
 
-        <main className="min-w-0 flex-1 bg-white">
+        <main className="min-w-0 flex-1 bg-white">  
+          <form onSubmit={(e) => e.preventDefault()}>
           <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
             {/* Client Profile overview */}
             <SectionCard id="profile" title="Client Profile">
@@ -821,6 +896,7 @@ export default function App() {
             )}
           </div>
           </div>
+          </form>
         </main>
       </div>
 
