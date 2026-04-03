@@ -215,7 +215,6 @@ function MultiSelectDropdown<T extends string>({
   otherOption,
   otherValue,
   onOtherChange,
-  placeholder = 'Select...',
   className,
 }: {
   options: T[]
@@ -224,7 +223,6 @@ function MultiSelectDropdown<T extends string>({
   otherOption?: T
   otherValue?: string
   onOtherChange?: (v: string) => void
-  placeholder?: string
   className?: string
 }) {
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
