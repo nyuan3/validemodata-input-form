@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react'
-import { User, Save, RotateCcw, ChevronDown, ChevronRight } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { User, Save, RotateCcw, ChevronDown, ChevronRight, ChevronLeft, Plus, Pencil, Trash2, X } from 'lucide-react'
 
 // ---------- Types ----------
 type NameQuality = 'Full name reported' | 'Partial / street name / code name' | "Client doesn't know" | 'Client prefers not to answer' | 'Data not collected'
@@ -25,9 +25,50 @@ type SexualOrientationOption = 'Heterosexual' | 'Gay' | 'Lesbian' | 'Bisexual' |
 type GeographyLocationOption = 'LA County' | 'Other Southern CA' | 'Other CA' | 'Out of state' | 'Outside U.S.'
 type PreferredLanguageOption = 'English' | 'Spanish' | 'Russian' | 'French' | 'Armenian' | 'ASL' | 'Portuguese' | 'Chinese' | 'Korean' | 'Arabic' | 'Other'
 type HouseholdRelationOption = 'Head of household' | 'Child' | 'Spouse/partner' | 'Other relation' | 'Non-relation'
+type MemberTypeOption =
+  | 'Head of Household'
+  | 'Spouse'
+  | 'Son'
+  | 'Daughter'
+  | 'Brother'
+  | 'Sister'
+  | 'Mother'
+  | 'Father'
+  | 'Other relation'
+  | 'Non-related household member'
+type CurrentLivingSituationOption =
+  | 'Place not meant for habitation (e.g., a vehicle, an abandoned building, bus/train/subway station/airport or anywhere outside)'
+  | 'Emergency shelter, including hotel or motel paid for with emergency shelter voucher, or RHY-funded Host Home shelter'
+  | 'Safe Haven'
+  | 'Foster care home or foster care group home'
+  | 'Hospital or other residential non-psychiatric medical facility'
+  | 'Jail, prison or juvenile detention facility'
+  | 'Long-term care facility or nursing home'
+  | 'Psychiatric hospital or other psychiatric facility'
+  | 'Substance abuse treatment facility or detox center'
+  | 'Residential project or halfway house with no homeless criteria'
+  | 'Hotel or motel paid for without emergency shelter voucher'
+  | "Staying or living in a friend's room, apartment or house"
+  | "Staying or living in a family member's room, apartment or house"
+  | 'Rental by client, no ongoing housing subsidy'
+  | 'Rental by client, with ongoing housing subsidy'
+  | 'Owned by client, with ongoing housing subsidy'
+  | 'Owned by client, no ongoing housing subsidy'
+  | 'Other'
+  | 'Worker unable to determine'
+  | 'Data not collected'
+type RentalSubsidyTypeOption = 'Government rental assistance' | 'Private rental assistance' | 'RRH' | 'VASH' | 'Other'
+type YesNoOption = 'Yes' | 'No' | ''
 type ProfileStatus = 'Draft' | 'In Review' | 'Complete'
 
 interface EmergencyContact { name: string; phone: string; email: string }
+
+interface HouseholdMember {
+  id: string
+  name: string
+  memberType: MemberTypeOption | ''
+  startDate: string
+}
 
 interface ClientProfile {
   firstName: string
@@ -59,6 +100,16 @@ interface ClientProfile {
   vashStatus: VASHStatusOption | ''
   emergencyContact: EmergencyContact
   householdComposition: HouseholdRelationOption[]
+  householdMembers: HouseholdMember[]
+  dateOfContact: string
+  currentLivingSituation: CurrentLivingSituationOption | ''
+  locationDetails: string
+  leavingWithin14Days: YesNoOption
+  subsequentResidenceIdentified: YesNoOption
+  resourcesForHousing: YesNoOption
+  leaseInLast60Days: YesNoOption
+  movedTwiceIn60Days: YesNoOption
+  rentalSubsidyType: RentalSubsidyTypeOption | ''
   priorLivingSituation: PriorLivingOption | ''
   lengthOfStay: LengthOfStayOption | ''
   firstTimeHomeless: YesNoDkRefused | ''
@@ -96,6 +147,73 @@ function cn(...classes: (string | undefined | false)[]): string {
   return classes.filter(Boolean).join(' ')
 }
 
+function todayISO(): string {
+  const d = new Date()
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+const MEMBER_TYPE_OPTIONS: MemberTypeOption[] = [
+  'Head of Household',
+  'Spouse',
+  'Son',
+  'Daughter',
+  'Brother',
+  'Sister',
+  'Mother',
+  'Father',
+  'Other relation',
+  'Non-related household member',
+]
+
+const CURRENT_LIVING_SITUATION_OPTIONS: CurrentLivingSituationOption[] = [
+  'Place not meant for habitation (e.g., a vehicle, an abandoned building, bus/train/subway station/airport or anywhere outside)',
+  'Emergency shelter, including hotel or motel paid for with emergency shelter voucher, or RHY-funded Host Home shelter',
+  'Safe Haven',
+  'Foster care home or foster care group home',
+  'Hospital or other residential non-psychiatric medical facility',
+  'Jail, prison or juvenile detention facility',
+  'Long-term care facility or nursing home',
+  'Psychiatric hospital or other psychiatric facility',
+  'Substance abuse treatment facility or detox center',
+  'Residential project or halfway house with no homeless criteria',
+  'Hotel or motel paid for without emergency shelter voucher',
+  "Staying or living in a friend's room, apartment or house",
+  "Staying or living in a family member's room, apartment or house",
+  'Rental by client, no ongoing housing subsidy',
+  'Rental by client, with ongoing housing subsidy',
+  'Owned by client, with ongoing housing subsidy',
+  'Owned by client, no ongoing housing subsidy',
+  'Other',
+  'Worker unable to determine',
+  'Data not collected',
+]
+
+const TEMP_OR_PERM_HOUSING_OPTIONS: CurrentLivingSituationOption[] = [
+  "Staying or living in a friend's room, apartment or house",
+  "Staying or living in a family member's room, apartment or house",
+  'Rental by client, no ongoing housing subsidy',
+  'Rental by client, with ongoing housing subsidy',
+  'Owned by client, with ongoing housing subsidy',
+  'Owned by client, no ongoing housing subsidy',
+  'Other',
+  'Worker unable to determine',
+]
+
+const RENTAL_SUBSIDY_TYPE_OPTIONS: RentalSubsidyTypeOption[] = [
+  'Government rental assistance',
+  'Private rental assistance',
+  'RRH',
+  'VASH',
+  'Other',
+]
+
+function generateMemberId(): string {
+  return `hm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 // ---------- Demo data ----------
 const DEMO_PROFILE: ClientProfile = {
   firstName: 'Maria',
@@ -127,6 +245,19 @@ const DEMO_PROFILE: ClientProfile = {
   vashStatus: '',
   emergencyContact: { name: 'Rosa Santos', phone: '(213) 555-0123', email: 'rosa.s@email.com' },
   householdComposition: ['Head of household', 'Child'],
+  householdMembers: [
+    { id: 'demo-hm-1', name: 'Maria Santos', memberType: 'Head of Household', startDate: '2026-05-13' },
+    { id: 'demo-hm-2', name: 'Diego Santos', memberType: 'Son', startDate: '2026-05-13' },
+  ],
+  dateOfContact: '2026-05-13',
+  currentLivingSituation: "Staying or living in a family member's room, apartment or house",
+  locationDetails: 'Sister\'s apartment, Echo Park',
+  leavingWithin14Days: 'Yes',
+  subsequentResidenceIdentified: 'No',
+  resourcesForHousing: 'No',
+  leaseInLast60Days: 'No',
+  movedTwiceIn60Days: 'Yes',
+  rentalSubsidyType: '',
   priorLivingSituation: 'Staying with family',
   lengthOfStay: '1–3 months',
   firstTimeHomeless: 'No',
@@ -191,6 +322,16 @@ const EMPTY_PROFILE: ClientProfile = {
   vashStatus: '',
   emergencyContact: { name: '', phone: '', email: '' },
   householdComposition: [],
+  householdMembers: [],
+  dateOfContact: '',
+  currentLivingSituation: '',
+  locationDetails: '',
+  leavingWithin14Days: '',
+  subsequentResidenceIdentified: '',
+  resourcesForHousing: '',
+  leaseInLast60Days: '',
+  movedTwiceIn60Days: '',
+  rentalSubsidyType: '',
   priorLivingSituation: '',
   lengthOfStay: '',
   firstTimeHomeless: '',
@@ -225,6 +366,12 @@ const EMPTY_PROFILE: ClientProfile = {
 }
 
 // ---------- Section config for nav ----------
+const TOP_NAV: { id: string; label: string }[] = [
+  { id: 'profile', label: 'Profile' },
+  { id: 'assessments', label: 'Assessments' },
+  { id: 'notes', label: 'Notes' },
+]
+
 const SECTIONS: { id: string; label: string }[] = [
   { id: 'profile', label: 'Client Profile' },
   { id: 'identity', label: 'Identity & Basic Info' },
@@ -234,6 +381,7 @@ const SECTIONS: { id: string; label: string }[] = [
   { id: 'disability', label: 'Disability & ADA' },
   { id: 'veteran', label: 'Veteran Status' },
   { id: 'contact', label: 'Contact & Household' },
+  { id: 'current-living', label: 'Current Living Situation' },
   { id: 'living', label: 'Current Living Situation' },
   { id: 'homelessness', label: 'Homelessness History' },
   { id: 'health', label: 'Health & Conditions' },
@@ -320,6 +468,156 @@ function MultiSelectDropdown<T extends string>({
           className="w-full border-0 border-b border-slate-300 bg-transparent px-0 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
         />
       )}
+    </div>
+  )
+}
+
+function AddHouseholdMemberModal({
+  open,
+  initialMember,
+  onSave,
+  onClose,
+}: {
+  open: boolean
+  initialMember: HouseholdMember | null
+  onSave: (m: HouseholdMember) => void
+  onClose: () => void
+}) {
+  const [name, setName] = useState('')
+  const [memberType, setMemberType] = useState<MemberTypeOption | ''>('')
+  const [startDate, setStartDate] = useState<string>(todayISO())
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    if (initialMember) {
+      setName(initialMember.name)
+      setMemberType(initialMember.memberType)
+      setStartDate(initialMember.startDate || todayISO())
+    } else {
+      setName('')
+      setMemberType('')
+      setStartDate(todayISO())
+    }
+  }, [open, initialMember])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  const handleBackdrop = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) onClose()
+  }
+
+  const handleSave = () => {
+    if (!memberType) return
+    onSave({
+      id: initialMember?.id ?? generateMemberId(),
+      name: name.trim(),
+      memberType,
+      startDate: startDate || todayISO(),
+    })
+  }
+
+  const inputBase = 'w-full border-0 border-b border-slate-300 bg-transparent px-0 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-0'
+  const selectBase = 'w-full rounded border border-slate-200 bg-slate-50 py-2 pl-3 pr-8 text-sm text-slate-900 focus:border-blue-500 focus:outline-none'
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      onMouseDown={handleBackdrop}
+      role="presentation"
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="ADD TO HOUSEHOLD"
+        className="w-full max-w-md rounded-lg bg-white shadow-xl"
+      >
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-800">Add to Household</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="space-y-4 px-5 py-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Name</label>
+            <input
+              type="text"
+              name="member-name"
+              aria-label="Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className={inputBase}
+              placeholder="Member name"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">
+              Member Type<span className="ml-0.5 text-red-500">*</span>
+            </label>
+            <select
+              name="member-type"
+              aria-label="Member Type"
+              value={memberType}
+              onChange={(e) => setMemberType(e.target.value as MemberTypeOption | '')}
+              className={selectBase}
+            >
+              <option value="">Select</option>
+              {MEMBER_TYPE_OPTIONS.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Start Date</label>
+            <input
+              type="date"
+              name="member-start-date"
+              aria-label="Start Date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className={inputBase}
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cancel"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!memberType}
+            aria-label="Save"
+            className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+          >
+            Save
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -417,11 +715,13 @@ function validateProfile(p: ClientProfile): string[] {
 
 // ---------- Main App ----------
 export default function App() {
-  const [clientProfile, setClientProfile] = useState<ClientProfile>(() => ({ ...EMPTY_PROFILE }))
+  const [clientProfile, setClientProfile] = useState<ClientProfile>(() => ({ ...EMPTY_PROFILE, dateOfContact: todayISO() }))
   const [profileStatus, setProfileStatus] = useState<ProfileStatus>('Draft')
   const [jsonPreviewOpen, setJsonPreviewOpen] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [currentSectionId, setCurrentSectionId] = useState('identity')
+  const [currentSectionId, setCurrentSectionId] = useState('profile')
+  const [memberModalOpen, setMemberModalOpen] = useState(false)
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null)
 
   const update = useCallback(<K extends keyof ClientProfile>(key: K, value: ClientProfile[K]) => {
     setClientProfile((prev) => ({ ...prev, [key]: value }))
@@ -434,6 +734,40 @@ export default function App() {
     }))
   }, [])
 
+  const openAddMember = useCallback(() => {
+    setEditingMemberId(null)
+    setMemberModalOpen(true)
+  }, [])
+
+  const openEditMember = useCallback((id: string) => {
+    setEditingMemberId(id)
+    setMemberModalOpen(true)
+  }, [])
+
+  const closeMemberModal = useCallback(() => {
+    setMemberModalOpen(false)
+    setEditingMemberId(null)
+  }, [])
+
+  const saveMember = useCallback((member: HouseholdMember) => {
+    setClientProfile((prev) => {
+      const exists = prev.householdMembers.some((m) => m.id === member.id)
+      const householdMembers = exists
+        ? prev.householdMembers.map((m) => (m.id === member.id ? member : m))
+        : [...prev.householdMembers, member]
+      return { ...prev, householdMembers }
+    })
+    setMemberModalOpen(false)
+    setEditingMemberId(null)
+  }, [])
+
+  const removeMember = useCallback((id: string) => {
+    setClientProfile((prev) => ({
+      ...prev,
+      householdMembers: prev.householdMembers.filter((m) => m.id !== id),
+    }))
+  }, [])
+
   const handleSave = useCallback(() => {
     if (validateProfile(clientProfile).length > 0) return
     setProfileStatus('Complete')
@@ -442,7 +776,7 @@ export default function App() {
   }, [clientProfile])
 
   const handleReset = useCallback(() => {
-    setClientProfile({ ...EMPTY_PROFILE })
+    setClientProfile({ ...EMPTY_PROFILE, dateOfContact: todayISO() })
     setProfileStatus('Draft')
   }, [])
 
@@ -464,8 +798,6 @@ export default function App() {
   const branchOptions: BranchOption[] = ['Army', 'Air Force', 'Navy', 'Marines', 'Coast Guard', 'Space Force']
   const dischargeOptions: DischargeOption[] = ['Honorable', 'General', 'Other than honorable', 'Bad conduct', 'Dishonorable', 'Uncharacterized']
   const vashOptions: VASHStatusOption[] = ['Admitted', 'Needs screening', 'Interested list', 'Vouchered', 'Various ineligible reasons']
-  const priorLivingOptions: PriorLivingOption[] = ['Homeless', 'Place not meant for habitation', 'Emergency shelter', 'Safe haven', 'Institutional', 'Jail', 'Hospital', 'Psychiatric facility', 'Detox', 'Nursing home', 'Foster care', 'Temporary', 'Transitional housing', 'Staying with friends', 'Staying with family', 'Hotel/motel', 'Permanent', 'Rental with subsidy', 'Rental without subsidy', 'Owned with subsidy', 'Owned without subsidy']
-  const lengthStayOptions: LengthOfStayOption[] = ['1 night or less', '2–6 nights', '1 week–1 month', '1–3 months', '3–12 months', '1 year+']
   const yesNoDk: YesNoDkRefused[] = ['Yes', 'No', "Don't know", 'Prefer not to answer', 'Refused', 'Data not collected']
   const substanceOptions: SubstanceUseOption[] = ['No', 'Alcohol', 'Drug', 'Both']
   const dvHowLongOptions: DVHowLongAgoOption[] = ['< 3 months', '3–6 months', '6–12 months', '1+ year']
@@ -506,12 +838,15 @@ export default function App() {
 
       <div className="flex flex-1">
         <aside className="hidden shrink-0 lg:block">
-          <StickySectionNav sections={SECTIONS} currentSectionId={currentSectionId} onSectionChange={setCurrentSectionId} />
+          <StickySectionNav sections={TOP_NAV} currentSectionId={currentSectionId} onSectionChange={setCurrentSectionId} />
         </aside>
 
         <main className="min-w-0 flex-1 bg-white">  
           <form onSubmit={(e) => e.preventDefault()}>
-          <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+          <div className="flex gap-6 px-6 py-8">
+          <div className="mx-auto w-full max-w-3xl space-y-6">
+            {currentSectionId === 'profile' && (
+            <>
             {/* Client Profile overview */}
             <SectionCard id="profile" title="Client Profile">
               <p className="text-sm text-slate-600">
@@ -682,21 +1017,68 @@ export default function App() {
             <FormField label="Household composition (multi-select)">
               <MultiSelectDropdown options={householdOptions} value={clientProfile.householdComposition} onChange={(v) => update('householdComposition', v)} />
             </FormField>
-          </SectionCard>
 
-          <SectionCard id="living" title="Current Living Situation">
-            <FormField label="Prior living situation">
-              <select value={clientProfile.priorLivingSituation} onChange={(e) => update('priorLivingSituation', e.target.value as PriorLivingOption | '')} className={cn(selectBase, 'max-w-md')}>
-                <option value="">Select</option>
-                {priorLivingOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Length of stay">
-              <select value={clientProfile.lengthOfStay} onChange={(e) => update('lengthOfStay', e.target.value as LengthOfStayOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {lengthStayOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
+            <div className="border-t border-slate-200 pt-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-800">Household Members</h3>
+                <button
+                  type="button"
+                  onClick={openAddMember}
+                  aria-label="Add Household Member"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Household Member
+                </button>
+              </div>
+              {clientProfile.householdMembers.length === 0 ? (
+                <p className="rounded border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-xs text-slate-500">
+                  No household members added.
+                </p>
+              ) : (
+                <ul className="divide-y divide-slate-200 overflow-hidden rounded border border-slate-200" aria-label="Household Members">
+                  {clientProfile.householdMembers.map((m) => (
+                    <li
+                      key={m.id}
+                      data-member-id={m.id}
+                      data-member-type={m.memberType}
+                      data-member-start-date={m.startDate}
+                      data-member-name={m.name}
+                      className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-900">{m.name || <span className="italic text-slate-400">Unnamed</span>}</p>
+                        <p className="text-xs text-slate-500">
+                          <span aria-label="Member Type">{m.memberType || '—'}</span>
+                          <span className="mx-1.5 text-slate-300">|</span>
+                          <span aria-label="Start Date">{m.startDate || '—'}</span>
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEditMember(m.id)}
+                          aria-label="Edit"
+                          className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeMember(m.id)}
+                          aria-label="Remove"
+                          className="inline-flex items-center gap-1 rounded border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Remove
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </SectionCard>
 
           <SectionCard id="homelessness" title="Homelessness History">
@@ -895,6 +1277,249 @@ export default function App() {
               </pre>
             )}
           </div>
+          </>
+          )}
+
+          {currentSectionId === 'assessments' && (
+            <SectionCard id="current-living" title="Current Living Situation">
+              <FormField label="Date of Contact">
+                <input
+                  type="date"
+                  name="date-of-contact"
+                  aria-label="Date of Contact"
+                  value={clientProfile.dateOfContact}
+                  onChange={(e) => update('dateOfContact', e.target.value)}
+                  className={cn(inputBase, 'max-w-xs')}
+                />
+              </FormField>
+              <FormField label="Current Living Situation">
+                <select
+                  name="current-living-situation"
+                  aria-label="Current Living Situation"
+                  value={clientProfile.currentLivingSituation}
+                  onChange={(e) => update('currentLivingSituation', e.target.value as CurrentLivingSituationOption | '')}
+                  className={selectBase}
+                >
+                  <option value="">Select</option>
+                  {CURRENT_LIVING_SITUATION_OPTIONS.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label="Location Details">
+                <input
+                  type="text"
+                  name="location-details"
+                  aria-label="Location Details"
+                  value={clientProfile.locationDetails}
+                  onChange={(e) => update('locationDetails', e.target.value)}
+                  className={inputBase}
+                  placeholder="Optional"
+                />
+              </FormField>
+
+              {clientProfile.currentLivingSituation === 'Rental by client, with ongoing housing subsidy' && (
+                <FormField label="Rental Subsidy Type">
+                  <select
+                    name="rental-subsidy-type"
+                    aria-label="Rental Subsidy Type"
+                    value={clientProfile.rentalSubsidyType}
+                    onChange={(e) => update('rentalSubsidyType', e.target.value as RentalSubsidyTypeOption | '')}
+                    className={cn(selectBase, 'max-w-xs')}
+                  >
+                    <option value="">Select</option>
+                    {RENTAL_SUBSIDY_TYPE_OPTIONS.map((o) => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
+                  </select>
+                </FormField>
+              )}
+
+              {TEMP_OR_PERM_HOUSING_OPTIONS.includes(clientProfile.currentLivingSituation as CurrentLivingSituationOption) && (
+                <>
+                  <FormField label="Leaving within 14 days?">
+                    <select
+                      name="leaving-within-14-days"
+                      aria-label="Is client going to have to leave their current living situation within 14 days?"
+                      value={clientProfile.leavingWithin14Days}
+                      onChange={(e) => update('leavingWithin14Days', e.target.value as YesNoOption)}
+                      className={cn(selectBase, 'max-w-xs')}
+                    >
+                      <option value="">Select</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                  </FormField>
+                  <FormField label="Subsequent residence identified?">
+                    <select
+                      name="subsequent-residence-identified"
+                      aria-label="Has a subsequent residence been identified?"
+                      value={clientProfile.subsequentResidenceIdentified}
+                      onChange={(e) => update('subsequentResidenceIdentified', e.target.value as YesNoOption)}
+                      className={cn(selectBase, 'max-w-xs')}
+                    >
+                      <option value="">Select</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                  </FormField>
+                  <FormField label="Resources for permanent housing?">
+                    <select
+                      name="resources-for-housing"
+                      aria-label="Does individual or family have resources or support networks to obtain other permanent housing?"
+                      value={clientProfile.resourcesForHousing}
+                      onChange={(e) => update('resourcesForHousing', e.target.value as YesNoOption)}
+                      className={cn(selectBase, 'max-w-xs')}
+                    >
+                      <option value="">Select</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                  </FormField>
+                  <FormField label="Lease in last 60 days?">
+                    <select
+                      name="lease-in-last-60-days"
+                      aria-label="Has the client had a lease or ownership interest in a permanent housing unit in the last 60 days?"
+                      value={clientProfile.leaseInLast60Days}
+                      onChange={(e) => update('leaseInLast60Days', e.target.value as YesNoOption)}
+                      className={cn(selectBase, 'max-w-xs')}
+                    >
+                      <option value="">Select</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                  </FormField>
+                  <FormField label="Moved 2+ times in last 60 days?">
+                    <select
+                      name="moved-twice-in-60-days"
+                      aria-label="Has the client moved 2 or more times in the last 60 days?"
+                      value={clientProfile.movedTwiceIn60Days}
+                      onChange={(e) => update('movedTwiceIn60Days', e.target.value as YesNoOption)}
+                      className={cn(selectBase, 'max-w-xs')}
+                    >
+                      <option value="">Select</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                  </FormField>
+                </>
+              )}
+            </SectionCard>
+          )}
+
+          {currentSectionId === 'notes' && (
+            <SectionCard id="notes" title="Notes">
+              <p className="text-sm text-slate-500">No notes yet.</p>
+            </SectionCard>
+          )}
+
+          {currentSectionId === 'household' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setCurrentSectionId('profile')}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Back to Profile
+                </button>
+                <button
+                  type="button"
+                  onClick={openAddMember}
+                  aria-label="Add Household Member"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Household Member
+                </button>
+              </div>
+
+              <SectionCard id="household-management" title="Household Management">
+                {clientProfile.householdMembers.length === 0 ? (
+                  <p className="rounded border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                    No household members yet. Click <strong>Add Household Member</strong> to get started.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-slate-200 overflow-hidden rounded border border-slate-200" aria-label="Household Members">
+                    {clientProfile.householdMembers.map((m) => (
+                      <li
+                        key={m.id}
+                        data-member-id={m.id}
+                        data-member-type={m.memberType}
+                        data-member-start-date={m.startDate}
+                        data-member-name={m.name}
+                        className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-900">
+                            {m.name || <span className="italic text-slate-400">Unnamed</span>}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            <span aria-label="Member Type">{m.memberType || '—'}</span>
+                            <span className="mx-1.5 text-slate-300">|</span>
+                            <span aria-label="Start Date">{m.startDate || '—'}</span>
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEditMember(m.id)}
+                            aria-label="Edit"
+                            className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeMember(m.id)}
+                            aria-label="Remove"
+                            className="inline-flex items-center gap-1 rounded border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Remove
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </SectionCard>
+            </div>
+          )}
+          </div>
+          {currentSectionId === 'profile' && (
+            <aside className="hidden w-72 shrink-0 space-y-4 xl:block">
+              <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                  <h3 className="text-sm font-semibold text-slate-800">Household Members</h3>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentSectionId('household')}
+                    aria-label="Manage household"
+                    className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Manage
+                  </button>
+                </div>
+                <div className="px-4 py-3">
+                  {clientProfile.householdMembers.length === 0 ? (
+                    <p className="text-xs text-slate-500">No active members</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {clientProfile.householdMembers.map((m) => (
+                        <li key={m.id} className="text-xs">
+                          <p className="font-medium text-slate-800">{m.name || 'Unnamed'}</p>
+                          <p className="text-slate-500">{m.memberType || '—'}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </aside>
+          )}
           </div>
           </form>
         </main>
@@ -908,6 +1533,13 @@ export default function App() {
           {SECTIONS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
       </div>
+
+      <AddHouseholdMemberModal
+        open={memberModalOpen}
+        initialMember={editingMemberId ? clientProfile.householdMembers.find((m) => m.id === editingMemberId) ?? null : null}
+        onSave={saveMember}
+        onClose={closeMemberModal}
+      />
     </div>
   )
 }
