@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { User, Save, RotateCcw, ChevronDown, ChevronRight, ChevronLeft, Plus, Pencil, Trash2, X } from 'lucide-react'
+import { User, Save, RotateCcw, ChevronDown, ChevronRight, ChevronLeft, Plus, Pencil, Trash2, X, Search, ArrowLeft, Users } from 'lucide-react'
 
 // ---------- Types ----------
 type NameQuality = 'Full name reported' | 'Partial / street name / code name' | "Client doesn't know" | 'Client prefers not to answer' | 'Data not collected'
@@ -28,13 +28,18 @@ type HouseholdRelationOption = 'Head of household' | 'Child' | 'Spouse/partner' 
 type MemberTypeOption =
   | 'Head of Household'
   | 'Spouse'
+  | 'Spouse/Partner'
   | 'Son'
   | 'Daughter'
+  | 'Child'
   | 'Brother'
   | 'Sister'
+  | 'Sibling'
   | 'Mother'
   | 'Father'
+  | 'Parent'
   | 'Other relation'
+  | 'Other'
   | 'Non-related household member'
 type CurrentLivingSituationOption =
   | 'Place not meant for habitation (e.g., a vehicle, an abandoned building, bus/train/subway station/airport or anywhere outside)'
@@ -628,6 +633,7 @@ function ProfileHeader({
   onSave,
   onReset,
   onLoadDemo,
+  onBack,
   validationErrors,
 }: {
   profile: ClientProfile
@@ -635,12 +641,24 @@ function ProfileHeader({
   onSave: () => void
   onReset: () => void
   onLoadDemo: () => void
+  onBack?: () => void
   validationErrors: string[]
 }) {
   const displayName = [profile.firstName, profile.lastName].filter(Boolean).join(' ') || 'New client'
   return (
     <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-3 shadow-sm">
       <div className="flex items-center gap-3">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to clients"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            All Clients
+          </button>
+        )}
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
           <User className="h-5 w-5" />
         </div>
@@ -713,15 +731,1474 @@ function validateProfile(p: ClientProfile): string[] {
   return errs
 }
 
+// ---------- Clients (list-level) ----------
+type ClientStatus = 'Draft' | 'Active' | 'Complete'
+
+interface Client {
+  id: string
+  createdAt: string // ISO date
+  caseManager: string
+  profile: ClientProfile
+}
+
+const CLIENTS_STORAGE_KEY = 'hmis-intake-clients'
+
+function generateClientId(): string {
+  return `cl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function clientDisplayName(p: ClientProfile): string {
+  const full = [p.firstName, p.lastName].filter(Boolean).join(' ').trim()
+  return full || 'Unnamed client'
+}
+
+function deriveClientStatus(p: ClientProfile): ClientStatus {
+  const hasName = !!(p.firstName?.trim() || p.lastName?.trim())
+  if (!hasName) return 'Draft'
+  if (validateProfile(p).length === 0) return 'Complete'
+  return 'Active'
+}
+
+function statusBadgeClass(s: ClientStatus): string {
+  if (s === 'Complete') return 'bg-emerald-100 text-emerald-800'
+  if (s === 'Active') return 'bg-amber-100 text-amber-800'
+  return 'bg-slate-100 text-slate-700'
+}
+
+function formatDate(iso: string): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+function buildSeedClients(): Client[] {
+  const baseDay = new Date()
+  const daysAgo = (n: number) => {
+    const d = new Date(baseDay)
+    d.setDate(d.getDate() - n)
+    return d.toISOString().slice(0, 10)
+  }
+  return [
+    {
+      id: generateClientId(),
+      createdAt: daysAgo(12),
+      caseManager: 'Nathan Yuan',
+      profile: { ...DEMO_PROFILE },
+    },
+    {
+      id: generateClientId(),
+      createdAt: daysAgo(6),
+      caseManager: 'Priya Patel',
+      profile: { ...EMPTY_PROFILE, firstName: 'James', lastName: 'Okafor', nameQuality: 'Full name reported', dateOfContact: todayISO() },
+    },
+    {
+      id: generateClientId(),
+      createdAt: daysAgo(3),
+      caseManager: 'Marcus Lee',
+      profile: { ...EMPTY_PROFILE, firstName: 'Lin', lastName: 'Tran', nameQuality: 'Full name reported', dateOfContact: todayISO() },
+    },
+    {
+      id: generateClientId(),
+      createdAt: daysAgo(1),
+      caseManager: 'Elena Rodríguez',
+      profile: { ...EMPTY_PROFILE, dateOfContact: todayISO() },
+    },
+  ]
+}
+
+function loadClients(): Client[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(CLIENTS_STORAGE_KEY)
+    if (!raw) {
+      const seeded = buildSeedClients()
+      window.localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(seeded))
+      return seeded
+    }
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed as Client[]
+  } catch {
+    return []
+  }
+}
+
+function saveClients(clients: Client[]): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients))
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+function upsertClient(client: Client): Client[] {
+  const all = loadClients()
+  const idx = all.findIndex((c) => c.id === client.id)
+  const next = idx >= 0 ? all.map((c) => (c.id === client.id ? client : c)) : [...all, client]
+  saveClients(next)
+  return next
+}
+
+// ---------- Hash routing ----------
+type Route =
+  | { name: 'list' }
+  | { name: 'intake'; clientId: string }
+  | { name: 'household'; clientId: string }
+
+function parseHash(): Route {
+  const raw = (typeof window !== 'undefined' ? window.location.hash : '') || ''
+  const path = raw.replace(/^#/, '')
+  const hh = path.match(/^\/clients\/([^/]+)\/household$/)
+  if (hh) return { name: 'household', clientId: decodeURIComponent(hh[1]) }
+  const m = path.match(/^\/clients\/(.+)$/)
+  if (m) return { name: 'intake', clientId: decodeURIComponent(m[1]) }
+  return { name: 'list' }
+}
+
+function navigateToList(): void {
+  if (typeof window !== 'undefined') window.location.hash = '/clients'
+}
+
+function navigateToClient(id: string): void {
+  if (typeof window !== 'undefined') window.location.hash = `/clients/${encodeURIComponent(id)}`
+}
+
+function navigateToHousehold(id: string): void {
+  if (typeof window !== 'undefined') window.location.hash = `/clients/${encodeURIComponent(id)}/household`
+}
+
+// ---------- Status badge ----------
+function StatusBadge({ status }: { status: ClientStatus }) {
+  return (
+    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', statusBadgeClass(status))}>
+      {status}
+    </span>
+  )
+}
+
+// ---------- Household data model ----------
+interface HouseholdMembership {
+  clientId: string
+  memberType: MemberTypeOption
+  startDate: string // ISO yyyy-mm-dd (joined)
+  exitDate?: string // ISO yyyy-mm-dd (left)
+}
+
+interface Household {
+  id: string
+  createdAt: string
+  members: HouseholdMembership[]
+}
+
+const HOUSEHOLDS_STORAGE_KEY = 'hmis-intake-households'
+const RECENT_SEARCHES_STORAGE_KEY = 'hmis-intake-recent-searches'
+
+const HOH_RELATIONSHIP_OPTIONS: MemberTypeOption[] = ['Spouse/Partner', 'Child', 'Sibling', 'Parent', 'Other']
+
+function generateHouseholdId(): string {
+  return `hh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function isActiveMembership(m: HouseholdMembership, ref = todayISO()): boolean {
+  return !m.exitDate || m.exitDate > ref
+}
+
+function getActiveMembers(h: Household, ref = todayISO()): HouseholdMembership[] {
+  return h.members.filter((m) => isActiveMembership(m, ref))
+}
+
+function getPastMembers(h: Household, ref = todayISO()): HouseholdMembership[] {
+  return h.members.filter((m) => !isActiveMembership(m, ref))
+}
+
+function getHeadOfHousehold(h: Household, ref = todayISO()): HouseholdMembership | null {
+  return getActiveMembers(h, ref).find((m) => m.memberType === 'Head of Household') ?? null
+}
+
+function findActiveHouseholdForClient(clientId: string, households: Household[]): Household | null {
+  return households.find((h) => h.members.some((m) => m.clientId === clientId && isActiveMembership(m))) ?? null
+}
+
+function findPastHouseholdsForClient(clientId: string, households: Household[]): Household[] {
+  return households.filter(
+    (h) =>
+      h.members.some((m) => m.clientId === clientId && !isActiveMembership(m)) &&
+      !h.members.some((m) => m.clientId === clientId && isActiveMembership(m))
+  )
+}
+
+function loadHouseholds(): Household[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(HOUSEHOLDS_STORAGE_KEY)
+    if (!raw) {
+      const seeded = buildSeedHouseholds()
+      window.localStorage.setItem(HOUSEHOLDS_STORAGE_KEY, JSON.stringify(seeded))
+      return seeded
+    }
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed as Household[]
+  } catch {
+    return []
+  }
+}
+
+function saveHouseholds(households: Household[]): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(HOUSEHOLDS_STORAGE_KEY, JSON.stringify(households))
+  } catch {
+    /* ignore */
+  }
+}
+
+function buildSeedHouseholds(): Household[] {
+  const clients = loadClients()
+  if (clients.length < 2) return []
+  const hoh = clients[0]
+  const partner = clients[1]
+  return [
+    {
+      id: generateHouseholdId(),
+      createdAt: hoh.createdAt,
+      members: [
+        { clientId: hoh.id, memberType: 'Head of Household', startDate: hoh.createdAt },
+        { clientId: partner.id, memberType: 'Spouse/Partner', startDate: partner.createdAt },
+      ],
+    },
+  ]
+}
+
+// ---------- Recent searches ----------
+function loadRecentClientIds(): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(RECENT_SEARCHES_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((x) => typeof x === 'string').slice(0, 10)
+  } catch {
+    return []
+  }
+}
+
+function recordRecentClient(clientId: string): string[] {
+  if (typeof window === 'undefined') return []
+  const prev = loadRecentClientIds().filter((id) => id !== clientId)
+  const next = [clientId, ...prev].slice(0, 10)
+  try {
+    window.localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(next))
+  } catch {
+    /* ignore */
+  }
+  return next
+}
+
+// ---------- Household page (and modals) ----------
+type HHModalState =
+  | { kind: 'none' }
+  | { kind: 'add'; targetClientId: string }
+  | { kind: 'join-empty'; targetClientId: string; targetHouseholdId: string }
+  | { kind: 'choose-direction'; targetClientId: string; targetHouseholdId: string }
+  | { kind: 'leave-and-join'; leaverClientId: string; destinationHouseholdId: string }
+  | { kind: 'exit'; clientId: string }
+  | { kind: 'reactivate-conflict'; clientName: string }
+
+function HouseholdPage({
+  clientId,
+  onBackToIntake,
+  onOpenClient,
+}: {
+  clientId: string
+  onBackToIntake: () => void
+  onOpenClient: (id: string) => void
+}) {
+  const [clients] = useState<Client[]>(() => loadClients())
+  const [households, setHouseholds] = useState<Household[]>(() => loadHouseholds())
+  const [recentIds, setRecentIds] = useState<string[]>(() => loadRecentClientIds())
+  const [query, setQuery] = useState('')
+  const [modal, setModal] = useState<HHModalState>({ kind: 'none' })
+
+  const clientById = (id: string) => clients.find((c) => c.id === id) ?? null
+  const currentClient = clientById(clientId)
+
+  const currentHousehold = findActiveHouseholdForClient(clientId, households)
+  const currentActiveMembers = currentHousehold ? getActiveMembers(currentHousehold) : []
+  const currentPastMembers = currentHousehold ? getPastMembers(currentHousehold) : []
+
+  const previousHouseholds = findPastHouseholdsForClient(clientId, households)
+  const previousHouseholdMembers = previousHouseholds.flatMap((h) =>
+    h.members
+      .filter((m) => m.clientId !== clientId)
+      .map((m) => ({ membership: m, household: h }))
+  )
+
+  const recentClients = recentIds
+    .map((id) => clientById(id))
+    .filter((c): c is Client => !!c && c.id !== clientId)
+
+  const q = query.trim().toLowerCase()
+  const searchResults = q
+    ? clients
+        .filter((c) => c.id !== clientId)
+        .filter((c) => clientDisplayName(c.profile).toLowerCase().includes(q))
+        .slice(0, 25)
+    : []
+
+  const startActionForClient = (targetId: string) => {
+    const target = clientById(targetId)
+    if (!target) return
+    const targetHousehold = findActiveHouseholdForClient(targetId, households)
+    if (!targetHousehold) {
+      setModal({ kind: 'add', targetClientId: targetId })
+      return
+    }
+    if (!currentHousehold) {
+      setModal({ kind: 'join-empty', targetClientId: targetId, targetHouseholdId: targetHousehold.id })
+    } else if (currentHousehold.id === targetHousehold.id) {
+      return
+    } else {
+      setModal({ kind: 'choose-direction', targetClientId: targetId, targetHouseholdId: targetHousehold.id })
+    }
+  }
+
+  const handleAdd = (memberType: MemberTypeOption, startDate: string) => {
+    if (modal.kind !== 'add') return
+    let nextHouseholds = [...households]
+    let hh = findActiveHouseholdForClient(clientId, nextHouseholds)
+    if (!hh) {
+      hh = {
+        id: generateHouseholdId(),
+        createdAt: todayISO(),
+        members: [{ clientId, memberType: 'Head of Household', startDate: todayISO() }],
+      }
+      nextHouseholds = [...nextHouseholds, hh]
+    }
+    const updated: Household = {
+      ...hh,
+      members: [...hh.members, { clientId: modal.targetClientId, memberType, startDate }],
+    }
+    nextHouseholds = nextHouseholds.map((x) => (x.id === updated.id ? updated : x))
+    saveHouseholds(nextHouseholds)
+    setHouseholds(nextHouseholds)
+    setModal({ kind: 'none' })
+  }
+
+  const handleJoinEmpty = (memberType: MemberTypeOption, startDate: string) => {
+    if (modal.kind !== 'join-empty') return
+    const destHH = households.find((h) => h.id === modal.targetHouseholdId)
+    if (!destHH) return
+    const updated: Household = {
+      ...destHH,
+      members: [...destHH.members, { clientId, memberType, startDate }],
+    }
+    const next = households.map((h) => (h.id === updated.id ? updated : h))
+    saveHouseholds(next)
+    setHouseholds(next)
+    setModal({ kind: 'none' })
+  }
+
+  const handleLeaveAndJoin = (params: {
+    leaverClientId: string
+    destinationHouseholdId: string
+    endDate: string
+    newHeadClientId: string | null
+    newMemberType: MemberTypeOption
+    newStartDate: string
+  }) => {
+    const { leaverClientId, destinationHouseholdId, endDate, newHeadClientId, newMemberType, newStartDate } = params
+    const sourceHH = findActiveHouseholdForClient(leaverClientId, households)
+    if (!sourceHH) return
+    const updatedSource: Household = {
+      ...sourceHH,
+      members: sourceHH.members.map((m) => {
+        if (m.clientId === leaverClientId && isActiveMembership(m)) return { ...m, exitDate: endDate }
+        if (newHeadClientId && m.clientId === newHeadClientId && isActiveMembership(m))
+          return { ...m, memberType: 'Head of Household' as MemberTypeOption }
+        return m
+      }),
+    }
+    const destHH = households.find((h) => h.id === destinationHouseholdId)
+    if (!destHH) return
+    const updatedDest: Household = {
+      ...destHH,
+      members: [
+        ...destHH.members,
+        { clientId: leaverClientId, memberType: newMemberType, startDate: newStartDate },
+      ],
+    }
+    const next = households.map((h) =>
+      h.id === updatedSource.id ? updatedSource : h.id === updatedDest.id ? updatedDest : h
+    )
+    saveHouseholds(next)
+    setHouseholds(next)
+    setModal({ kind: 'none' })
+  }
+
+  const handleExit = (params: { clientId: string; exitDate: string; newHeadClientId: string | null }) => {
+    const { clientId: exitId, exitDate, newHeadClientId } = params
+    const hh = findActiveHouseholdForClient(exitId, households)
+    if (!hh) return
+    const updated: Household = {
+      ...hh,
+      members: hh.members.map((m) => {
+        if (m.clientId === exitId && isActiveMembership(m)) return { ...m, exitDate }
+        if (newHeadClientId && m.clientId === newHeadClientId && isActiveMembership(m))
+          return { ...m, memberType: 'Head of Household' as MemberTypeOption }
+        return m
+      }),
+    }
+    const next = households.map((h) => (h.id === updated.id ? updated : h))
+    saveHouseholds(next)
+    setHouseholds(next)
+    setModal({ kind: 'none' })
+  }
+
+  const handleReactivate = (membership: HouseholdMembership, household: Household) => {
+    const conflict = findActiveHouseholdForClient(membership.clientId, households)
+    if (conflict && conflict.id !== household.id) {
+      setModal({
+        kind: 'reactivate-conflict',
+        clientName: clientDisplayName(clientById(membership.clientId)?.profile ?? EMPTY_PROFILE),
+      })
+      return
+    }
+    const updated: Household = {
+      ...household,
+      members: household.members.map((m) =>
+        m.clientId === membership.clientId && m.startDate === membership.startDate ? { ...m, exitDate: undefined } : m
+      ),
+    }
+    const next = households.map((h) => (h.id === updated.id ? updated : h))
+    saveHouseholds(next)
+    setHouseholds(next)
+  }
+
+  const remember = (id: string) => setRecentIds(recordRecentClient(id))
+
+  if (!currentClient) {
+    return (
+      <div className="flex min-h-screen flex-col bg-slate-100">
+        <header className="flex h-12 items-center bg-[#3C474E] px-6">
+          <span className="text-base font-medium text-white">Demo Agency</span>
+        </header>
+        <main className="mx-auto w-full max-w-3xl px-6 py-12">
+          <p className="text-sm text-slate-700">Client not found.</p>
+          <button
+            type="button"
+            onClick={onBackToIntake}
+            className="mt-4 inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Back
+          </button>
+        </main>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col bg-slate-100">
+      <header className="flex h-12 items-center bg-[#3C474E] px-6">
+        <span className="text-base font-medium text-white">Demo Agency</span>
+      </header>
+
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-3 shadow-sm">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onBackToIntake}
+            aria-label="Back to intake"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to Intake
+          </button>
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+            <Users className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold text-slate-900">Household Management</h1>
+            <p className="text-xs text-slate-500">{clientDisplayName(currentClient.profile)}</p>
+          </div>
+        </div>
+      </div>
+
+      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-6">
+            <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <h2 className="text-base font-semibold text-slate-800">Search Clients</h2>
+              </div>
+              <div className="space-y-3 px-4 py-4">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search by name"
+                    className="w-full rounded border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                {q && (
+                  <SearchResults
+                    clients={searchResults}
+                    allClients={clients}
+                    households={households}
+                    onOpen={(id) => {
+                      remember(id)
+                      onOpenClient(id)
+                    }}
+                    onAction={(id) => {
+                      remember(id)
+                      startActionForClient(id)
+                    }}
+                  />
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <h2 className="text-base font-semibold text-slate-800">Household History</h2>
+                <p className="mt-0.5 text-xs text-slate-500">Members who previously belonged to this household.</p>
+              </div>
+              {currentHousehold && currentPastMembers.length > 0 ? (
+                <ul className="divide-y divide-slate-200">
+                  {currentPastMembers.map((m) => {
+                    const c = clientById(m.clientId)
+                    return (
+                      <li key={`${m.clientId}-${m.startDate}`} className="flex items-center justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-900">
+                            {c ? clientDisplayName(c.profile) : 'Unknown client'}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {m.memberType} · {formatDate(m.startDate)} – {m.exitDate ? formatDate(m.exitDate) : '—'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleReactivate(m, currentHousehold!)}
+                          className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Reactivate
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <p className="px-4 py-6 text-sm text-slate-500">No past members.</p>
+              )}
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <h2 className="text-base font-semibold text-slate-800">Previous Household History</h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Clients who shared a previous household with {clientDisplayName(currentClient.profile)}.
+                </p>
+              </div>
+              {previousHouseholdMembers.length > 0 ? (
+                <ul className="divide-y divide-slate-200">
+                  {previousHouseholdMembers.map(({ membership, household }) => {
+                    const c = clientById(membership.clientId)
+                    return (
+                      <li
+                        key={`${household.id}-${membership.clientId}-${membership.startDate}`}
+                        className="flex items-center justify-between gap-3 px-4 py-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-900">
+                            {c ? clientDisplayName(c.profile) : 'Unknown client'}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {membership.memberType} · {formatDate(membership.startDate)} –{' '}
+                            {membership.exitDate ? formatDate(membership.exitDate) : 'present'}
+                          </p>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <p className="px-4 py-6 text-sm text-slate-500">No prior households on record.</p>
+              )}
+            </section>
+          </div>
+
+          <aside className="space-y-6">
+            <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <h3 className="text-sm font-semibold text-slate-800">Current Household Members</h3>
+              </div>
+              {currentHousehold && currentActiveMembers.length > 0 ? (
+                <ul className="divide-y divide-slate-200">
+                  {currentActiveMembers.map((m) => {
+                    const c = clientById(m.clientId)
+                    return (
+                      <li key={m.clientId} className="flex items-center justify-between gap-2 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-900">
+                            {c ? clientDisplayName(c.profile) : 'Unknown'}
+                          </p>
+                          <p className="text-xs text-slate-500">{m.memberType} · since {formatDate(m.startDate)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setModal({ kind: 'exit', clientId: m.clientId })}
+                          aria-label="Edit membership"
+                          className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Edit
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <p className="px-4 py-6 text-sm text-slate-500">No current household. Search to add a member.</p>
+              )}
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <h3 className="text-sm font-semibold text-slate-800">Your Recent Client Searches</h3>
+              </div>
+              {recentClients.length > 0 ? (
+                <ul className="divide-y divide-slate-200">
+                  {recentClients.map((c) => (
+                    <RecentClientRow
+                      key={c.id}
+                      client={c}
+                      households={households}
+                      onOpen={() => {
+                        remember(c.id)
+                        onOpenClient(c.id)
+                      }}
+                      onAction={() => {
+                        remember(c.id)
+                        startActionForClient(c.id)
+                      }}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p className="px-4 py-6 text-xs text-slate-500">No recent searches yet.</p>
+              )}
+            </section>
+          </aside>
+        </div>
+      </main>
+
+      {modal.kind === 'add' && (
+        <AddToHouseholdModal
+          targetName={clientDisplayName(clientById(modal.targetClientId)?.profile ?? EMPTY_PROFILE)}
+          currentName={clientDisplayName(currentClient.profile)}
+          willCreate={!currentHousehold}
+          onClose={() => setModal({ kind: 'none' })}
+          onSave={handleAdd}
+        />
+      )}
+      {modal.kind === 'join-empty' && (
+        <JoinHouseholdModal
+          currentName={clientDisplayName(currentClient.profile)}
+          targetName={clientDisplayName(clientById(modal.targetClientId)?.profile ?? EMPTY_PROFILE)}
+          onClose={() => setModal({ kind: 'none' })}
+          onSave={handleJoinEmpty}
+        />
+      )}
+      {modal.kind === 'choose-direction' && (
+        <ChooseDirectionModal
+          currentName={clientDisplayName(currentClient.profile)}
+          targetName={clientDisplayName(clientById(modal.targetClientId)?.profile ?? EMPTY_PROFILE)}
+          onClose={() => setModal({ kind: 'none' })}
+          onChooseA={() =>
+            setModal({ kind: 'leave-and-join', leaverClientId: clientId, destinationHouseholdId: modal.targetHouseholdId })
+          }
+          onChooseB={() => {
+            const ch = findActiveHouseholdForClient(clientId, households)
+            if (!ch) return
+            setModal({ kind: 'leave-and-join', leaverClientId: modal.targetClientId, destinationHouseholdId: ch.id })
+          }}
+        />
+      )}
+      {modal.kind === 'leave-and-join' && (
+        <LeaveAndJoinModal
+          leaverName={clientDisplayName(clientById(modal.leaverClientId)?.profile ?? EMPTY_PROFILE)}
+          leaverClientId={modal.leaverClientId}
+          destinationHouseholdId={modal.destinationHouseholdId}
+          households={households}
+          clients={clients}
+          onClose={() => setModal({ kind: 'none' })}
+          onSave={handleLeaveAndJoin}
+        />
+      )}
+      {modal.kind === 'exit' && (
+        <ExitMembershipModal
+          clientName={clientDisplayName(clientById(modal.clientId)?.profile ?? EMPTY_PROFILE)}
+          clientId={modal.clientId}
+          households={households}
+          clients={clients}
+          onClose={() => setModal({ kind: 'none' })}
+          onSave={handleExit}
+        />
+      )}
+      {modal.kind === 'reactivate-conflict' && (
+        <ReactivateConflictModal clientName={modal.clientName} onClose={() => setModal({ kind: 'none' })} />
+      )}
+    </div>
+  )
+}
+
+// ---------- Household sub-components ----------
+function HouseholdContextLabel({
+  households,
+  clients,
+  clientId,
+}: {
+  households: Household[]
+  clients: Client[]
+  clientId: string
+}) {
+  const hh = findActiveHouseholdForClient(clientId, households)
+  if (!hh) return <span className="text-xs text-slate-400">No household</span>
+  const hohMembership = getHeadOfHousehold(hh)
+  const hoh = hohMembership ? clients.find((c) => c.id === hohMembership.clientId) : null
+  const memberCount = getActiveMembers(hh).length
+  return (
+    <span className="text-xs text-slate-500">
+      {hoh ? `HoH: ${clientDisplayName(hoh.profile)}` : 'No HoH'} · {memberCount} member{memberCount === 1 ? '' : 's'}
+    </span>
+  )
+}
+
+function ActionIcon({ kind, onClick }: { kind: 'add' | 'join'; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      aria-label={kind === 'add' ? 'Add to household' : 'Join household'}
+      title={kind === 'add' ? 'Add to household' : 'Join household'}
+      className={cn(
+        'inline-flex items-center gap-1 rounded border px-2 py-1 text-xs font-medium opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100',
+        kind === 'add'
+          ? 'border-blue-200 bg-white text-blue-700 hover:bg-blue-50'
+          : 'border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50'
+      )}
+    >
+      {kind === 'add' ? <Plus className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+      {kind === 'add' ? 'Add' : 'Join'}
+    </button>
+  )
+}
+
+function SearchResults({
+  clients,
+  allClients,
+  households,
+  onOpen,
+  onAction,
+}: {
+  clients: Client[]
+  allClients: Client[]
+  households: Household[]
+  onOpen: (id: string) => void
+  onAction: (id: string) => void
+}) {
+  if (clients.length === 0) {
+    return <p className="px-2 py-3 text-sm text-slate-500">No matches.</p>
+  }
+  return (
+    <ul className="divide-y divide-slate-200 rounded border border-slate-200">
+      {clients.map((c) => {
+        const hh = findActiveHouseholdForClient(c.id, households)
+        const status = deriveClientStatus(c.profile)
+        return (
+          <li
+            key={c.id}
+            className="group flex items-center justify-between gap-3 bg-white px-4 py-2.5 hover:bg-slate-50"
+          >
+            <button type="button" onClick={() => onOpen(c.id)} className="flex min-w-0 flex-1 flex-col text-left">
+              <span className="flex items-center gap-2">
+                <span className="truncate text-sm font-medium text-slate-900">{clientDisplayName(c.profile)}</span>
+                <StatusBadge status={status} />
+              </span>
+              <HouseholdContextLabel households={households} clients={allClients} clientId={c.id} />
+            </button>
+            <ActionIcon kind={hh ? 'join' : 'add'} onClick={() => onAction(c.id)} />
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function RecentClientRow({
+  client,
+  households,
+  onOpen,
+  onAction,
+}: {
+  client: Client
+  households: Household[]
+  onOpen: () => void
+  onAction: () => void
+}) {
+  const hh = findActiveHouseholdForClient(client.id, households)
+  return (
+    <li className="group flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-slate-50">
+      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 flex-col text-left">
+        <span className="truncate text-sm font-medium text-slate-900">{clientDisplayName(client.profile)}</span>
+        <span className="text-xs text-slate-500">{hh ? 'In a household' : 'No household'}</span>
+      </button>
+      <ActionIcon kind={hh ? 'join' : 'add'} onClick={onAction} />
+    </li>
+  )
+}
+
+// ---------- Household modals ----------
+function ModalShell({
+  title,
+  onClose,
+  children,
+  footer,
+}: {
+  title: string
+  onClose: () => void
+  children: React.ReactNode
+  footer: React.ReactNode
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div className="w-full max-w-lg rounded-lg bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+          <h2 className="text-base font-semibold text-slate-800">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="space-y-4 px-5 py-4">{children}</div>
+        <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+          {footer}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RelationshipSelect({
+  value,
+  onChange,
+}: {
+  value: MemberTypeOption | ''
+  onChange: (v: MemberTypeOption | '') => void
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as MemberTypeOption | '')}
+      className="w-full rounded border border-slate-200 bg-slate-50 py-2 pl-3 pr-8 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+    >
+      <option value="">Select relationship</option>
+      {HOH_RELATIONSHIP_OPTIONS.map((o) => (
+        <option key={o} value={o}>{o}</option>
+      ))}
+    </select>
+  )
+}
+
+function AddToHouseholdModal({
+  targetName,
+  currentName,
+  willCreate,
+  onClose,
+  onSave,
+}: {
+  targetName: string
+  currentName: string
+  willCreate: boolean
+  onClose: () => void
+  onSave: (memberType: MemberTypeOption, startDate: string) => void
+}) {
+  const [memberType, setMemberType] = useState<MemberTypeOption | ''>('')
+  const [startDate, setStartDate] = useState<string>(todayISO())
+  const canSave = !!memberType && !!startDate
+  return (
+    <ModalShell
+      title="Add to Household"
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!canSave}
+            onClick={() => canSave && onSave(memberType as MemberTypeOption, startDate)}
+            className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+          >
+            Save
+          </button>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-600">
+        Add <strong>{targetName}</strong> to <strong>{currentName}</strong>'s household
+        {willCreate ? ` (a new household will be created with ${currentName} as Head of Household).` : '.'}
+      </p>
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-800">Member Type</label>
+        <RelationshipSelect value={memberType} onChange={setMemberType} />
+      </div>
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-800">Start Date</label>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="w-full border-0 border-b border-slate-300 bg-transparent px-0 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+        />
+      </div>
+    </ModalShell>
+  )
+}
+
+function JoinHouseholdModal({
+  currentName,
+  targetName,
+  onClose,
+  onSave,
+}: {
+  currentName: string
+  targetName: string
+  onClose: () => void
+  onSave: (memberType: MemberTypeOption, startDate: string) => void
+}) {
+  const [memberType, setMemberType] = useState<MemberTypeOption | ''>('')
+  const [startDate, setStartDate] = useState<string>(todayISO())
+  const canSave = !!memberType && !!startDate
+  return (
+    <ModalShell
+      title="Join Household"
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!canSave}
+            onClick={() => canSave && onSave(memberType as MemberTypeOption, startDate)}
+            className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+          >
+            Save
+          </button>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-600">
+        <strong>{currentName}</strong> will join <strong>{targetName}</strong>'s household.
+      </p>
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-800">{currentName}'s relationship to Head of Household</label>
+        <RelationshipSelect value={memberType} onChange={setMemberType} />
+      </div>
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-800">Start Date</label>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="w-full border-0 border-b border-slate-300 bg-transparent px-0 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+        />
+      </div>
+    </ModalShell>
+  )
+}
+
+function ChooseDirectionModal({
+  currentName,
+  targetName,
+  onClose,
+  onChooseA,
+  onChooseB,
+}: {
+  currentName: string
+  targetName: string
+  onClose: () => void
+  onChooseA: () => void
+  onChooseB: () => void
+}) {
+  return (
+    <ModalShell
+      title="Both clients are in households"
+      onClose={onClose}
+      footer={
+        <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Cancel
+        </button>
+      }
+    >
+      <p className="text-sm text-slate-600">Choose which client leaves their household.</p>
+      <button
+        type="button"
+        onClick={onChooseA}
+        className="block w-full rounded border border-slate-200 bg-white p-3 text-left text-sm hover:border-blue-300 hover:bg-blue-50"
+      >
+        <p className="font-medium text-slate-900">{currentName} leaves their household</p>
+        <p className="text-xs text-slate-500">{currentName} joins {targetName}'s household.</p>
+      </button>
+      <button
+        type="button"
+        onClick={onChooseB}
+        className="block w-full rounded border border-slate-200 bg-white p-3 text-left text-sm hover:border-blue-300 hover:bg-blue-50"
+      >
+        <p className="font-medium text-slate-900">{targetName} leaves their household</p>
+        <p className="text-xs text-slate-500">{targetName} joins {currentName}'s household.</p>
+      </button>
+    </ModalShell>
+  )
+}
+
+function LeaveAndJoinModal({
+  leaverName,
+  leaverClientId,
+  destinationHouseholdId,
+  households,
+  clients,
+  onClose,
+  onSave,
+}: {
+  leaverName: string
+  leaverClientId: string
+  destinationHouseholdId: string
+  households: Household[]
+  clients: Client[]
+  onClose: () => void
+  onSave: (params: {
+    leaverClientId: string
+    destinationHouseholdId: string
+    endDate: string
+    newHeadClientId: string | null
+    newMemberType: MemberTypeOption
+    newStartDate: string
+  }) => void
+}) {
+  const sourceHH = findActiveHouseholdForClient(leaverClientId, households)
+  const leaverMembership = sourceHH?.members.find((m) => m.clientId === leaverClientId && isActiveMembership(m))
+  const leaverIsHoH = leaverMembership?.memberType === 'Head of Household'
+  const otherActive = sourceHH ? getActiveMembers(sourceHH).filter((m) => m.clientId !== leaverClientId) : []
+
+  const [endDate, setEndDate] = useState<string>(todayISO())
+  const [newHeadClientId, setNewHeadClientId] = useState<string>('')
+  const [memberType, setMemberType] = useState<MemberTypeOption | ''>('')
+  const [startDate, setStartDate] = useState<string>(todayISO())
+
+  const endDateError =
+    leaverMembership && endDate && endDate < leaverMembership.startDate
+      ? 'End date cannot be earlier than the join date.'
+      : ''
+  const needsNewHead = !!leaverIsHoH && otherActive.length > 0
+  const canSave =
+    !!endDate && !endDateError && !!memberType && !!startDate && (!needsNewHead || !!newHeadClientId)
+
+  return (
+    <ModalShell
+      title="Transfer to another household"
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!canSave}
+            onClick={() =>
+              canSave &&
+              onSave({
+                leaverClientId,
+                destinationHouseholdId,
+                endDate,
+                newHeadClientId: needsNewHead ? newHeadClientId : null,
+                newMemberType: memberType as MemberTypeOption,
+                newStartDate: startDate,
+              })
+            }
+            className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+          >
+            Save
+          </button>
+        </>
+      }
+    >
+      <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Leaving household</p>
+        <p className="mt-1 text-sm text-slate-800">{leaverName}</p>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-800">End Date</label>
+        <input
+          type="date"
+          value={endDate}
+          min={leaverMembership?.startDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          className="w-full border-0 border-b border-slate-300 bg-transparent px-0 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+        />
+        {endDateError && <p className="mt-1 text-xs text-red-600">{endDateError}</p>}
+      </div>
+
+      {needsNewHead && (
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-800">New Head of Household</label>
+          <select
+            value={newHeadClientId}
+            onChange={(e) => setNewHeadClientId(e.target.value)}
+            className="w-full rounded border border-slate-200 bg-slate-50 py-2 pl-3 pr-8 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+          >
+            <option value="">Select new Head</option>
+            {otherActive.map((m) => {
+              const c = clients.find((x) => x.id === m.clientId)
+              return (
+                <option key={m.clientId} value={m.clientId}>
+                  {c ? clientDisplayName(c.profile) : m.clientId}
+                </option>
+              )
+            })}
+          </select>
+        </div>
+      )}
+
+      <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Joining household</p>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-800">Member Type</label>
+        <RelationshipSelect value={memberType} onChange={setMemberType} />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-800">Start Date</label>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="w-full border-0 border-b border-slate-300 bg-transparent px-0 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+        />
+      </div>
+    </ModalShell>
+  )
+}
+
+function ExitMembershipModal({
+  clientName,
+  clientId,
+  households,
+  clients,
+  onClose,
+  onSave,
+}: {
+  clientName: string
+  clientId: string
+  households: Household[]
+  clients: Client[]
+  onClose: () => void
+  onSave: (params: { clientId: string; exitDate: string; newHeadClientId: string | null }) => void
+}) {
+  const hh = findActiveHouseholdForClient(clientId, households)
+  const membership = hh?.members.find((m) => m.clientId === clientId && isActiveMembership(m))
+  const isHoH = membership?.memberType === 'Head of Household'
+  const otherActive = hh ? getActiveMembers(hh).filter((m) => m.clientId !== clientId) : []
+
+  const [exited, setExited] = useState<boolean>(false)
+  const [exitDate, setExitDate] = useState<string>(todayISO())
+  const [newHeadClientId, setNewHeadClientId] = useState<string>('')
+
+  const dateError =
+    exited && membership && exitDate && exitDate < membership.startDate
+      ? 'Exit date cannot be earlier than join date.'
+      : ''
+  const needsNewHead = exited && !!isHoH && otherActive.length > 0
+  const canSave = !exited ? true : !!exitDate && !dateError && (!needsNewHead || !!newHeadClientId)
+
+  return (
+    <ModalShell
+      title="Exit Global Household"
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!exited || !canSave}
+            onClick={() =>
+              exited &&
+              canSave &&
+              onSave({
+                clientId,
+                exitDate,
+                newHeadClientId: needsNewHead ? newHeadClientId : null,
+              })
+            }
+            className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+          >
+            Save
+          </button>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-600">
+        Member: <strong>{clientName}</strong>
+      </p>
+      <label className="flex items-center gap-3">
+        <input
+          type="checkbox"
+          checked={exited}
+          onChange={(e) => setExited(e.target.checked)}
+          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+        />
+        <span className="text-sm font-medium text-slate-800">Exited Household</span>
+      </label>
+
+      {exited && (
+        <>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-800">Exit Date</label>
+            <input
+              type="date"
+              value={exitDate}
+              min={membership?.startDate}
+              onChange={(e) => setExitDate(e.target.value)}
+              className="w-full border-0 border-b border-slate-300 bg-transparent px-0 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+            />
+            {dateError && <p className="mt-1 text-xs text-red-600">{dateError}</p>}
+          </div>
+          {needsNewHead && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-800">New Head of Household</label>
+              <select
+                value={newHeadClientId}
+                onChange={(e) => setNewHeadClientId(e.target.value)}
+                className="w-full rounded border border-slate-200 bg-slate-50 py-2 pl-3 pr-8 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">Select new Head</option>
+                {otherActive.map((m) => {
+                  const c = clients.find((x) => x.id === m.clientId)
+                  return (
+                    <option key={m.clientId} value={m.clientId}>
+                      {c ? clientDisplayName(c.profile) : m.clientId}
+                    </option>
+                  )
+                })}
+              </select>
+            </div>
+          )}
+          {isHoH && otherActive.length === 0 && (
+            <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              This is the only active member. The household will be left without a Head of Household.
+            </p>
+          )}
+        </>
+      )}
+    </ModalShell>
+  )
+}
+
+function ReactivateConflictModal({ clientName, onClose }: { clientName: string; onClose: () => void }) {
+  return (
+    <ModalShell
+      title="Cannot reactivate"
+      onClose={onClose}
+      footer={
+        <button type="button" onClick={onClose} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+          OK
+        </button>
+      }
+    >
+      <p className="text-sm text-slate-700">
+        <strong>{clientName}</strong> is currently a member of another household and cannot be reactivated here. End that membership first.
+      </p>
+    </ModalShell>
+  )
+}
+
+// ---------- Clients list page ----------
+function ClientsListPage({ onOpenClient, onNewClient }: { onOpenClient: (id: string) => void; onNewClient: () => void }) {
+  const [clients, setClients] = useState<Client[]>(() => loadClients())
+  const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === CLIENTS_STORAGE_KEY) setClients(loadClients())
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  const totals = clients.reduce(
+    (acc, c) => {
+      const s = deriveClientStatus(c.profile)
+      acc.total++
+      acc[s]++
+      return acc
+    },
+    { total: 0, Draft: 0, Active: 0, Complete: 0 } as { total: number; Draft: number; Active: number; Complete: number }
+  )
+
+  const q = query.trim().toLowerCase()
+  const filtered = q
+    ? clients.filter((c) => clientDisplayName(c.profile).toLowerCase().includes(q))
+    : clients
+
+  const sorted = [...filtered].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+
+  return (
+    <div className="flex min-h-screen flex-col bg-slate-100">
+      <header className="flex h-12 items-center bg-[#3C474E] px-6">
+        <span className="text-base font-medium text-white">Demo Agency</span>
+      </header>
+
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-3 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+            <Users className="h-5 w-5" />
+          </div>
+          <h1 className="text-lg font-semibold text-slate-900">Clients</h1>
+        </div>
+        <button
+          type="button"
+          onClick={onNewClient}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          <Plus className="h-4 w-4" />
+          New Client
+        </button>
+      </div>
+
+      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { label: 'Total', value: totals.total, tone: 'text-slate-900' },
+            { label: 'Active', value: totals.Active, tone: 'text-amber-700' },
+            { label: 'Draft', value: totals.Draft, tone: 'text-slate-700' },
+            { label: 'Complete', value: totals.Complete, tone: 'text-emerald-700' },
+          ].map((s) => (
+            <div key={s.label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">{s.label}</p>
+              <p className={cn('mt-1 text-2xl font-semibold', s.tone)}>{s.value}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search clients by name"
+                className="w-full max-w-md rounded border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {sorted.length === 0 ? (
+            <p className="px-4 py-12 text-center text-sm text-slate-500">
+              {clients.length === 0 ? 'No clients yet. Click New Client to get started.' : 'No clients match your search.'}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th scope="col" className="px-4 py-3">Client</th>
+                    <th scope="col" className="px-4 py-3">Status</th>
+                    <th scope="col" className="px-4 py-3">Created</th>
+                    <th scope="col" className="px-4 py-3">Case manager</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {sorted.map((c) => {
+                    const status = deriveClientStatus(c.profile)
+                    return (
+                      <tr
+                        key={c.id}
+                        onClick={() => onOpenClient(c.id)}
+                        className="cursor-pointer hover:bg-slate-50"
+                      >
+                        <td className="px-4 py-3 font-medium text-slate-900">{clientDisplayName(c.profile)}</td>
+                        <td className="px-4 py-3"><StatusBadge status={status} /></td>
+                        <td className="px-4 py-3 text-slate-600">{formatDate(c.createdAt)}</td>
+                        <td className="px-4 py-3 text-slate-600">{c.caseManager || 'Unassigned'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  )
+}
+
 // ---------- Main App ----------
-export default function App() {
-  const [clientProfile, setClientProfile] = useState<ClientProfile>(() => ({ ...EMPTY_PROFILE, dateOfContact: todayISO() }))
+function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void }) {
+  const initialClient = (() => {
+    const all = loadClients()
+    return all.find((c) => c.id === clientId) ?? null
+  })()
+  const [clientProfile, setClientProfile] = useState<ClientProfile>(
+    () => initialClient?.profile ?? { ...EMPTY_PROFILE, dateOfContact: todayISO() }
+  )
   const [profileStatus, setProfileStatus] = useState<ProfileStatus>('Draft')
   const [jsonPreviewOpen, setJsonPreviewOpen] = useState(false)
   const [saved, setSaved] = useState(false)
   const [currentSectionId, setCurrentSectionId] = useState('profile')
   const [memberModalOpen, setMemberModalOpen] = useState(false)
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null)
+  const caseManagerRef = useRef<string>(initialClient?.caseManager ?? 'Unassigned')
+  const createdAtRef = useRef<string>(initialClient?.createdAt ?? todayISO())
 
   const update = useCallback(<K extends keyof ClientProfile>(key: K, value: ClientProfile[K]) => {
     setClientProfile((prev) => ({ ...prev, [key]: value }))
@@ -770,10 +2247,16 @@ export default function App() {
 
   const handleSave = useCallback(() => {
     if (validateProfile(clientProfile).length > 0) return
+    upsertClient({
+      id: clientId,
+      createdAt: createdAtRef.current,
+      caseManager: caseManagerRef.current,
+      profile: clientProfile,
+    })
     setProfileStatus('Complete')
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
-  }, [clientProfile])
+  }, [clientProfile, clientId])
 
   const handleReset = useCallback(() => {
     setClientProfile({ ...EMPTY_PROFILE, dateOfContact: todayISO() })
@@ -833,7 +2316,7 @@ export default function App() {
       <header className="flex h-12 items-center bg-[#3C474E] px-6">
         <span className="text-base font-medium text-white">Demo Agency</span>
       </header>
-      <ProfileHeader profile={clientProfile} status={profileStatus} onSave={handleSave} onReset={handleReset} onLoadDemo={handleLoadDemo} validationErrors={errors} />
+      <ProfileHeader profile={clientProfile} status={profileStatus} onSave={handleSave} onReset={handleReset} onLoadDemo={handleLoadDemo} onBack={onBack} validationErrors={errors} />
       {saved && <div className="bg-emerald-600 px-6 py-2 text-center text-sm font-medium text-white">Profile saved.</div>}
 
       <div className="flex flex-1">
@@ -1491,33 +2974,7 @@ export default function App() {
           </div>
           {currentSectionId === 'profile' && (
             <aside className="hidden w-72 shrink-0 space-y-4 xl:block">
-              <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                  <h3 className="text-sm font-semibold text-slate-800">Household Members</h3>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentSectionId('household')}
-                    aria-label="Manage household"
-                    className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    Manage
-                  </button>
-                </div>
-                <div className="px-4 py-3">
-                  {clientProfile.householdMembers.length === 0 ? (
-                    <p className="text-xs text-slate-500">No active members</p>
-                  ) : (
-                    <ul className="space-y-2">
-                      {clientProfile.householdMembers.map((m) => (
-                        <li key={m.id} className="text-xs">
-                          <p className="font-medium text-slate-800">{m.name || 'Unnamed'}</p>
-                          <p className="text-slate-500">{m.memberType || '—'}</p>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
+              <HouseholdSidePanel clientId={clientId} onManage={() => navigateToHousehold(clientId)} />
             </aside>
           )}
           </div>
@@ -1542,4 +2999,83 @@ export default function App() {
       />
     </div>
   )
+}
+
+function HouseholdSidePanel({ clientId, onManage }: { clientId: string; onManage: () => void }) {
+  const households = loadHouseholds()
+  const clients = loadClients()
+  const hh = findActiveHouseholdForClient(clientId, households)
+  const members = hh ? getActiveMembers(hh) : []
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <h3 className="text-sm font-semibold text-slate-800">Household Members</h3>
+        <button
+          type="button"
+          onClick={onManage}
+          aria-label="Manage household"
+          className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Manage
+        </button>
+      </div>
+      <div className="px-4 py-3">
+        {members.length === 0 ? (
+          <p className="text-xs text-slate-500">No active members</p>
+        ) : (
+          <ul className="space-y-2">
+            {members.map((m) => {
+              const c = clients.find((x) => x.id === m.clientId)
+              return (
+                <li key={m.clientId} className="text-xs">
+                  <p className="font-medium text-slate-800">{c ? clientDisplayName(c.profile) : 'Unknown'}</p>
+                  <p className="text-slate-500">{m.memberType}</p>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------- Top-level route switcher ----------
+export default function App() {
+  const [route, setRoute] = useState<Route>(() => parseHash())
+
+  useEffect(() => {
+    const onHashChange = () => setRoute(parseHash())
+    window.addEventListener('hashchange', onHashChange)
+    if (!window.location.hash) window.location.hash = '/clients'
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  const handleOpenClient = useCallback((id: string) => navigateToClient(id), [])
+  const handleBackToList = useCallback(() => navigateToList(), [])
+  const handleNewClient = useCallback(() => {
+    const next: Client = {
+      id: generateClientId(),
+      createdAt: todayISO(),
+      caseManager: 'Unassigned',
+      profile: { ...EMPTY_PROFILE, dateOfContact: todayISO() },
+    }
+    upsertClient(next)
+    navigateToClient(next.id)
+  }, [])
+
+  if (route.name === 'intake') {
+    return <IntakeForm key={route.clientId} clientId={route.clientId} onBack={handleBackToList} />
+  }
+  if (route.name === 'household') {
+    return (
+      <HouseholdPage
+        key={route.clientId}
+        clientId={route.clientId}
+        onBackToIntake={() => navigateToClient(route.clientId)}
+        onOpenClient={(id) => navigateToHousehold(id)}
+      />
+    )
+  }
+  return <ClientsListPage onOpenClient={handleOpenClient} onNewClient={handleNewClient} />
 }
