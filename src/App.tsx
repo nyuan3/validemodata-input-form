@@ -723,9 +723,11 @@ function StickySectionNav({ sections, currentSectionId, onSectionChange }: { sec
 
 function validateProfile(p: ClientProfile): string[] {
   const errs: string[] = []
-  if (!p.firstName?.trim()) errs.push('First name')
-  if (!p.lastName?.trim()) errs.push('Last name')
-  if (!p.dateOfBirth?.trim()) errs.push('Date of birth')
+  const nameNotRequired = p.nameQuality === 'Partial / street name / code name' || p.nameQuality === "Client doesn't know"
+  const dobNotRequired = p.dobQuality === 'Approximate / partial' || p.dobQuality === "Client doesn't know"
+  if (!nameNotRequired && !p.firstName?.trim()) errs.push('First name')
+  if (!nameNotRequired && !p.lastName?.trim()) errs.push('Last name')
+  if (!dobNotRequired && !p.dateOfBirth?.trim()) errs.push('Date of birth')
   if (!p.nameQuality) errs.push('Name quality')
   if (!p.dobQuality) errs.push('DOB quality')
   return errs
@@ -2355,10 +2357,10 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                   {ssnQualityOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               </FormField>
-              <FormField label="Last Name" required error={!clientProfile.lastName?.trim() ? 'Required' : undefined}>
+              <FormField label="Last Name" required={clientProfile.nameQuality !== 'Partial / street name / code name' && clientProfile.nameQuality !== "Client doesn't know"} error={clientProfile.nameQuality !== 'Partial / street name / code name' && clientProfile.nameQuality !== "Client doesn't know" && !clientProfile.lastName?.trim() ? 'Required' : undefined}>
                 <input type="text" value={clientProfile.lastName} onChange={(e) => update('lastName', e.target.value)} className={inputBase} placeholder="Last name" />
               </FormField>
-              <FormField label="First Name" required error={!clientProfile.firstName?.trim() ? 'Required' : undefined}>
+              <FormField label="First Name" required={clientProfile.nameQuality !== 'Partial / street name / code name' && clientProfile.nameQuality !== "Client doesn't know"} error={clientProfile.nameQuality !== 'Partial / street name / code name' && clientProfile.nameQuality !== "Client doesn't know" && !clientProfile.firstName?.trim() ? 'Required' : undefined}>
                 <input type="text" value={clientProfile.firstName} onChange={(e) => update('firstName', e.target.value)} className={inputBase} placeholder="First name" />
               </FormField>
               <FormField label="Quality of Name" required error={!clientProfile.nameQuality ? 'Required' : undefined}>
@@ -2373,7 +2375,7 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                   {dobQualityOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               </FormField>
-              <FormField label="Date of Birth" required error={!clientProfile.dateOfBirth ? 'Required' : undefined}>
+              <FormField label="Date of Birth" required={clientProfile.dobQuality !== 'Approximate / partial' && clientProfile.dobQuality !== "Client doesn't know"} error={clientProfile.dobQuality !== 'Approximate / partial' && clientProfile.dobQuality !== "Client doesn't know" && !clientProfile.dateOfBirth ? 'Required' : undefined}>
                 <input type="date" value={clientProfile.dateOfBirth} onChange={(e) => update('dateOfBirth', e.target.value)} className={inputBase} />
               </FormField>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,180px)_1fr] sm:gap-6">
