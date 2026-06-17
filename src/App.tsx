@@ -843,6 +843,19 @@ function upsertClient(client: Client): Client[] {
   return next
 }
 
+// Wipe every client profile along with the household and recent-search data that
+// references them, leaving the app in a clean empty state.
+function deleteAllClients(): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify([]))
+    window.localStorage.setItem(HOUSEHOLDS_STORAGE_KEY, JSON.stringify([]))
+    window.localStorage.removeItem(RECENT_SEARCHES_STORAGE_KEY)
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
 // ---------- Hash routing ----------
 type Route =
   | { name: 'list' }
@@ -942,7 +955,27 @@ function loadHouseholds(): Household[] {
     }
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed as Household[]
+    // Heal legacy data: collapse duplicate active memberships per client per household,
+    // keeping the most recently started entry.
+    const healed = (parsed as Household[]).map((h) => {
+      const seen = new Map<string, HouseholdMembership>()
+      const out: HouseholdMembership[] = []
+      for (const m of h.members) {
+        if (!isActiveMembership(m)) {
+          out.push(m)
+          continue
+        }
+        const prev = seen.get(m.clientId)
+        if (!prev) {
+          seen.set(m.clientId, m)
+        } else if ((m.startDate || '') > (prev.startDate || '')) {
+          seen.set(m.clientId, m)
+        }
+      }
+      out.push(...seen.values())
+      return { ...h, members: out }
+    })
+    return healed
   } catch {
     return []
   }
@@ -1070,6 +1103,11 @@ function HouseholdPage({
 
   const handleAdd = (memberType: MemberTypeOption, startDate: string) => {
     if (modal.kind !== 'add') return
+    // Bail if target is already an active member anywhere — one household per client
+    if (findActiveHouseholdForClient(modal.targetClientId, households)) {
+      setModal({ kind: 'none' })
+      return
+    }
     let nextHouseholds = [...households]
     let hh = findActiveHouseholdForClient(clientId, nextHouseholds)
     if (!hh) {
@@ -1092,6 +1130,11 @@ function HouseholdPage({
 
   const handleJoinEmpty = (memberType: MemberTypeOption, startDate: string) => {
     if (modal.kind !== 'join-empty') return
+    // Bail if current client already has an active household — one household per client
+    if (findActiveHouseholdForClient(clientId, households)) {
+      setModal({ kind: 'none' })
+      return
+    }
     const destHH = households.find((h) => h.id === modal.targetHouseholdId)
     if (!destHH) return
     const updated: Household = {
@@ -1115,6 +1158,11 @@ function HouseholdPage({
     const { leaverClientId, destinationHouseholdId, endDate, newHeadClientId, newMemberType, newStartDate } = params
     const sourceHH = findActiveHouseholdForClient(leaverClientId, households)
     if (!sourceHH) return
+    if (sourceHH.id === destinationHouseholdId) {
+      // would create an active duplicate in the same household
+      setModal({ kind: 'none' })
+      return
+    }
     const updatedSource: Household = {
       ...sourceHH,
       members: sourceHH.members.map((m) => {
@@ -1161,8 +1209,10 @@ function HouseholdPage({
   }
 
   const handleReactivate = (membership: HouseholdMembership, household: Household) => {
+    // Block if the client has ANY active membership — same household or not.
+    // (One household per client at a time; reactivating would create a duplicate active row.)
     const conflict = findActiveHouseholdForClient(membership.clientId, households)
-    if (conflict && conflict.id !== household.id) {
+    if (conflict) {
       setModal({
         kind: 'reactivate-conflict',
         clientName: clientDisplayName(clientById(membership.clientId)?.profile ?? EMPTY_PROFILE),
@@ -1252,6 +1302,7 @@ function HouseholdPage({
                     clients={searchResults}
                     allClients={clients}
                     households={households}
+                    currentHouseholdId={currentHousehold?.id}
                     onOpen={(id) => {
                       remember(id)
                       onOpenClient(id)
@@ -1381,6 +1432,7 @@ function HouseholdPage({
                       key={c.id}
                       client={c}
                       households={households}
+                      currentHouseholdId={currentHousehold?.id}
                       onOpen={() => {
                         remember(c.id)
                         onOpenClient(c.id)
@@ -1509,12 +1561,14 @@ function SearchResults({
   clients,
   allClients,
   households,
+  currentHouseholdId,
   onOpen,
   onAction,
 }: {
   clients: Client[]
   allClients: Client[]
   households: Household[]
+  currentHouseholdId?: string
   onOpen: (id: string) => void
   onAction: (id: string) => void
 }) {
@@ -1525,6 +1579,7 @@ function SearchResults({
     <ul className="divide-y divide-slate-200 rounded border border-slate-200">
       {clients.map((c) => {
         const hh = findActiveHouseholdForClient(c.id, households)
+        const inCurrent = !!hh && hh.id === currentHouseholdId
         const status = deriveClientStatus(c.profile)
         return (
           <li
@@ -1538,7 +1593,11 @@ function SearchResults({
               </span>
               <HouseholdContextLabel households={households} clients={allClients} clientId={c.id} />
             </button>
-            <ActionIcon kind={hh ? 'join' : 'add'} onClick={() => onAction(c.id)} />
+            {inCurrent ? (
+              <span className="text-xs font-medium text-slate-400">In household</span>
+            ) : (
+              <ActionIcon kind={hh ? 'join' : 'add'} onClick={() => onAction(c.id)} />
+            )}
           </li>
         )
       })}
@@ -1549,22 +1608,29 @@ function SearchResults({
 function RecentClientRow({
   client,
   households,
+  currentHouseholdId,
   onOpen,
   onAction,
 }: {
   client: Client
   households: Household[]
+  currentHouseholdId?: string
   onOpen: () => void
   onAction: () => void
 }) {
   const hh = findActiveHouseholdForClient(client.id, households)
+  const inCurrent = !!hh && hh.id === currentHouseholdId
   return (
     <li className="group flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-slate-50">
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 flex-col text-left">
         <span className="truncate text-sm font-medium text-slate-900">{clientDisplayName(client.profile)}</span>
-        <span className="text-xs text-slate-500">{hh ? 'In a household' : 'No household'}</span>
+        <span className="text-xs text-slate-500">{inCurrent ? 'In this household' : hh ? 'In a household' : 'No household'}</span>
       </button>
-      <ActionIcon kind={hh ? 'join' : 'add'} onClick={onAction} />
+      {inCurrent ? (
+        <span className="text-xs font-medium text-slate-400">In household</span>
+      ) : (
+        <ActionIcon kind={hh ? 'join' : 'add'} onClick={onAction} />
+      )}
     </li>
   )
 }
@@ -2065,6 +2131,7 @@ function ReactivateConflictModal({ clientName, onClose }: { clientName: string; 
 function ClientsListPage({ onOpenClient, onNewClient }: { onOpenClient: (id: string) => void; onNewClient: () => void }) {
   const [clients, setClients] = useState<Client[]>(() => loadClients())
   const [query, setQuery] = useState('')
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -2073,6 +2140,13 @@ function ClientsListPage({ onOpenClient, onNewClient }: { onOpenClient: (id: str
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [])
+
+  const handleDeleteAll = () => {
+    deleteAllClients()
+    setClients([])
+    setQuery('')
+    setConfirmDeleteAll(false)
+  }
 
   const totals = clients.reduce(
     (acc, c) => {
@@ -2104,14 +2178,26 @@ function ClientsListPage({ onOpenClient, onNewClient }: { onOpenClient: (id: str
           </div>
           <h1 className="text-lg font-semibold text-slate-900">Clients</h1>
         </div>
-        <button
-          type="button"
-          onClick={onNewClient}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" />
-          New Client
-        </button>
+        <div className="flex items-center gap-2">
+          {clients.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setConfirmDeleteAll(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete All
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onNewClient}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" />
+            New Client
+          </button>
+        </div>
       </div>
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
@@ -2180,6 +2266,42 @@ function ClientsListPage({ onOpenClient, onNewClient }: { onOpenClient: (id: str
           )}
         </div>
       </main>
+
+      {confirmDeleteAll && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-red-100 text-red-600">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-900">Delete all profiles?</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  This permanently deletes all {clients.length} client {clients.length === 1 ? 'profile' : 'profiles'} along with their
+                  household and recent-search data. This cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteAll(false)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAll}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2248,14 +2370,14 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
   }, [])
 
   const handleSave = useCallback(() => {
-    if (validateProfile(clientProfile).length > 0) return
+    const hasErrors = validateProfile(clientProfile).length > 0
     upsertClient({
       id: clientId,
       createdAt: createdAtRef.current,
       caseManager: caseManagerRef.current,
       profile: clientProfile,
     })
-    setProfileStatus('Complete')
+    if (!hasErrors) setProfileStatus('Complete')
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }, [clientProfile, clientId])
