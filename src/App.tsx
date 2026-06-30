@@ -2,29 +2,20 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { User, Save, RotateCcw, ChevronDown, ChevronRight, ChevronLeft, Plus, Pencil, Trash2, X, Search, ArrowLeft, Users } from 'lucide-react'
 
 // ---------- Types ----------
-type NameQuality = 'Full name reported' | 'Partial / street name / code name' | "Client doesn't know" | 'Client prefers not to answer' | 'Data not collected'
-type SuffixOption = 'None' | 'Jr.' | 'Sr.' | 'II' | 'III' | 'IV' | 'V' | 'MD' | 'PhD' | 'Other'
-type DOBQuality = 'Full DOB reported' | 'Approximate / partial' | "Client doesn't know" | 'Client prefers not to answer' | 'Data not collected'
-type SSNQuality = 'Full SSN' | 'Approximate / partial' | "Client doesn't know" | 'Client prefers not to answer' | 'Data not collected'
-type GenderOption = 'Woman / Girl' | 'Man / Boy' | 'Culturally specific identity (e.g., Two-Spirit)' | 'Transgender' | 'Non-Binary' | 'Questioning' | 'Different identity (specify)' | "Client doesn't know" | 'Client prefers not to answer' | 'Data not collected'
-type SexOption = 'Female' | 'Male' | "Client doesn't know" | 'Client prefers not to answer' | 'Data not collected'
-type RaceEthnicityOption = 'American Indian / Alaska Native / Indigenous' | 'Asian / Asian American' | 'Black / African American / African' | 'Native Hawaiian / Pacific Islander' | 'White' | 'Hispanic/Latina/o' | 'Middle Eastern / North African' | "Client doesn't know" | 'Client prefers not to answer' | 'Data not collected'
-type PrimaryLanguageOption = 'English' | 'Spanish' | 'French' | 'Italian' | 'German' | 'Greek' | 'Polish' | 'Portuguese' | 'Russian' | 'Swedish' | 'American Sign Language' | 'Other (specify)' | "Client doesn't know" | 'Client prefers not to answer'
-type VeteranStatusOption = 'Yes' | 'No' | "Don't know" | 'Prefer not to answer' | 'Data not collected'
-type BranchOption = 'Army' | 'Air Force' | 'Navy' | 'Marines' | 'Coast Guard' | 'Space Force'
-type DischargeOption = 'Honorable' | 'General' | 'Other than honorable' | 'Bad conduct' | 'Dishonorable' | 'Uncharacterized'
-type VASHStatusOption = 'Admitted' | 'Needs screening' | 'Interested list' | 'Vouchered' | 'Various ineligible reasons'
-type PriorLivingOption = 'Homeless' | 'Place not meant for habitation' | 'Emergency shelter' | 'Safe haven' | 'Institutional' | 'Jail' | 'Hospital' | 'Psychiatric facility' | 'Detox' | 'Nursing home' | 'Foster care' | 'Temporary' | 'Transitional housing' | 'Staying with friends' | 'Staying with family' | 'Hotel/motel' | 'Permanent' | 'Rental with subsidy' | 'Rental without subsidy' | 'Owned with subsidy' | 'Owned without subsidy'
-type LengthOfStayOption = '1 night or less' | '2–6 nights' | '1 week–1 month' | '1–3 months' | '3–12 months' | '1 year+'
-type YesNoDkRefused = 'Yes' | 'No' | "Don't know" | 'Prefer not to answer' | 'Refused' | 'Data not collected'
-type SubstanceUseOption = 'No' | 'Alcohol' | 'Drug' | 'Both'
-type DVHowLongAgoOption = '< 3 months' | '3–6 months' | '6–12 months' | '1+ year'
-type EmploymentTypeOption = 'Full-time' | 'Part-time' | 'Seasonal / day labor'
-type EducationOption = '< Grade 5' | 'Grades 5–6' | 'Grades 7–8' | 'Grades 9–11' | 'High school' | 'GED' | 'Some college' | 'Associate' | 'Bachelor' | 'Graduate' | 'Vocational cert'
-type SexualOrientationOption = 'Heterosexual' | 'Gay' | 'Lesbian' | 'Bisexual' | 'Questioning' | 'Other' | "Don't know" | 'Refused'
-type GeographyLocationOption = 'LA County' | 'Other Southern CA' | 'Other CA' | 'Out of state' | 'Outside U.S.'
-type PreferredLanguageOption = 'English' | 'Spanish' | 'Russian' | 'French' | 'Armenian' | 'ASL' | 'Portuguese' | 'Chinese' | 'Korean' | 'Arabic' | 'Other'
-type HouseholdRelationOption = 'Head of household' | 'Child' | 'Spouse/partner' | 'Other relation' | 'Non-relation'
+// HUD HMIS standard response codes. The data-quality fields, veteran status,
+// disabling condition, etc. all store the HUD numeric code as a string.
+type DataQualityCode = '1' | '2' | '8' | '9' | '99'
+type VeteranCode = '0' | '1' | '8' | '9' | '99'
+type DisablingCode = '0' | '1' | '8' | '9' | '99'
+type RelationshipCode = '1' | '2' | '3' | '4' | '5'
+type LengthOfStayCode = '10' | '11' | '2' | '3' | '4' | '5' | '8' | '9' | '99'
+type TimesHomelessCode = '1' | '2' | '3' | '4' | '8' | '9' | '99'
+
+interface CodeOption {
+  value: string
+  label: string
+  description?: string
+}
 type MemberTypeOption =
   | 'Head of Household'
   | 'Spouse'
@@ -66,8 +57,6 @@ type RentalSubsidyTypeOption = 'Government rental assistance' | 'Private rental 
 type YesNoOption = 'Yes' | 'No' | ''
 type ProfileStatus = 'Draft' | 'In Review' | 'Complete'
 
-interface EmergencyContact { name: string; phone: string; email: string }
-
 interface HouseholdMember {
   id: string
   name: string
@@ -75,36 +64,79 @@ interface HouseholdMember {
   startDate: string
 }
 
+// HMIS Client Data — mirrors the HUD HMIS Data Standards schema.
 interface ClientProfile {
+  // 1. Client Name
   firstName: string
   middleName: string
   lastName: string
-  suffix: SuffixOption | ''
-  alias: string
-  nameQuality: NameQuality | ''
-  dateOfBirth: string
-  dobQuality: DOBQuality | ''
+  suffix: string
+  nameDataQuality: DataQualityCode | ''
+  // 2. Social Security Number
   ssn: string
-  ssnQuality: SSNQuality | ''
-  gender: GenderOption[]
-  genderOther: string
-  pronouns: string
-  sex: SexOption | ''
-  raceEthnicity: RaceEthnicityOption[]
-  tribalAffiliation: string
-  primaryLanguage: PrimaryLanguageOption | ''
-  primaryLanguageOther: string
-  hasDisability: 'Yes' | 'No' | ''
-  needsMobilityAccommodations: 'Yes' | 'No' | ''
-  mobilityFeatures: string[]
-  mobilityFeaturesOther: string
-  sensoryAccommodations: string[]
-  veteranStatus: VeteranStatusOption | ''
-  branch: BranchOption | ''
-  discharge: DischargeOption | ''
-  vashStatus: VASHStatusOption | ''
-  emergencyContact: EmergencyContact
-  householdComposition: HouseholdRelationOption[]
+  ssnDataQuality: DataQualityCode | ''
+  // 3. Date of Birth
+  dob: string
+  dobDataQuality: DataQualityCode | ''
+  // Sex
+  sex: string
+  // 4. Race and Ethnicity (multi-select; codes 8/9/99 are mutually exclusive)
+  raceEthnicity: string[]
+  raceEthnicityAdditional: string
+  // 5. Veteran Status
+  veteranStatus: VeteranCode | ''
+  // 6. Disabling Condition
+  disablingCondition: DisablingCode | ''
+  // 7. Project Enrollment Dates
+  projectStartDate: string
+  projectExitDate: string
+  housingMoveInDate: string
+  dateOfEngagement: string
+  bedNightDates: string[]
+  // 8. Destination at Exit
+  destinationType: string
+  destinationRentalSubsidyType: string
+  destinationOtherDescription: string
+  // 9. Relationship to Head of Household
+  relationshipToHoH: RelationshipCode | ''
+  // 10. CoC Code
+  cocCode: string
+  // 11. Prior Living Situation
+  priorResidenceType: string
+  priorRentalSubsidyType: string
+  lengthOfStay: LengthOfStayCode | ''
+  homelessnessStartDate: string
+  timesHomelessPast3Years: TimesHomelessCode | ''
+  monthsHomelessPast3Years: string
+  // Income from Any Source
+  income: IncomeRecord
+  // Non-Cash Benefits
+  nonCash: NonCashRecord
+  // Health Insurance
+  insurance: InsuranceRecord
+  // Disability & Health Conditions (shared information date)
+  healthInfoDate: string
+  physicalDisability: string
+  physicalDisabilityIndefinite: string
+  developmentalDisability: string
+  chronicHealthCondition: string
+  chronicHealthIndefinite: string
+  hivAids: string
+  mentalHealthDisorder: string
+  mentalHealthIndefinite: string
+  substanceUseDisorder: string
+  substanceUseIndefinite: string
+  // Survivor of Domestic Violence
+  dvInfoDate: string
+  survivorOfDV: string
+  dvWhenOccurred: string
+  dvCurrentlyFleeing: string
+  // Coordinated Entry (repeatable)
+  ceEvents: CEEvent[]
+  ceAssessments: CEAssessment[]
+
+  // ----- Retained operational fields (used by Household & Assessments tabs,
+  // not part of the HMIS profile schema) -----
   householdMembers: HouseholdMember[]
   dateOfContact: string
   currentLivingSituation: CurrentLivingSituationOption | ''
@@ -114,38 +146,9 @@ interface ClientProfile {
   resourcesForHousing: YesNoOption
   leaseInLast60Days: YesNoOption
   movedTwiceIn60Days: YesNoOption
-  rentalSubsidyType: RentalSubsidyTypeOption | ''
-  priorLivingSituation: PriorLivingOption | ''
-  lengthOfStay: LengthOfStayOption | ''
-  firstTimeHomeless: YesNoDkRefused | ''
-  timesHomelessPastYear: string
-  timesHomelessPast3Years: string
-  monthsHomelessPast3Years: string
-  physicalDisability: YesNoDkRefused | ''
-  chronicHealthCondition: YesNoDkRefused | ''
-  hivAids: YesNoDkRefused | ''
-  mentalHealthDisorder: YesNoDkRefused | ''
-  substanceUse: SubstanceUseOption | ''
-  survivorOfDV: YesNoDkRefused | ''
-  dvHowLongAgo: DVHowLongAgoOption | ''
-  currentlyFleeing: 'Yes' | 'No' | ''
-  currentlyEmployed: YesNoDkRefused | ''
-  employmentType: EmploymentTypeOption | ''
-  cashIncomeSources: string[]
-  cashIncomeOther: string
-  nonCashBenefits: string[]
-  nonCashOther: string
-  coveredByInsurance: YesNoDkRefused | ''
-  insuranceTypes: string[]
-  insuranceOther: string
-  highestEducation: EducationOption | ''
-  sexualOrientation: SexualOrientationOption | ''
-  sexualOrientationOther: string
-  livedOutsideLACounty: 'Yes' | 'No' | ''
-  previousLocation: GeographyLocationOption | ''
-  translationNeeded: 'Yes' | 'No' | ''
-  preferredLanguage: PreferredLanguageOption | ''
-  preferredLanguageOther: string
+  clsRentalSubsidyType: RentalSubsidyTypeOption | ''
+  clsInformationDate: string
+  clsVerifiedBy: string
 }
 
 function cn(...classes: (string | undefined | false)[]): string {
@@ -219,81 +222,467 @@ function generateMemberId(): string {
   return `hm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+// ---------- HMIS schema option lists ----------
+const NAME_DQ_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'Full name reported' },
+  { value: '2', label: 'Partial, street name, or code name reported' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+const SSN_DQ_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'Full SSN reported' },
+  { value: '2', label: 'Approximate or partial SSN reported' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+const DOB_DQ_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'Full DOB reported' },
+  { value: '2', label: 'Approximate or partial DOB reported' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+const RACE_ETHNICITY_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'American Indian, Alaska Native, or Indigenous' },
+  { value: '2', label: 'Asian or Asian American' },
+  { value: '3', label: 'Black, African American, or African' },
+  { value: '4', label: 'Hispanic/Latina/o' },
+  { value: '5', label: 'Middle Eastern or North African' },
+  { value: '6', label: 'Native Hawaiian or Pacific Islander' },
+  { value: '7', label: 'White' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+// Codes 8/9/99 must not be combined with any other race/ethnicity selection.
+const RACE_EXCLUSIVE_CODES = new Set(['8', '9', '99'])
+
+const VETERAN_STATUS_OPTIONS: CodeOption[] = [
+  { value: '0', label: 'No' },
+  { value: '1', label: 'Yes' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+const DISABLING_CONDITION_OPTIONS: CodeOption[] = [
+  { value: '0', label: 'No' },
+  { value: '1', label: 'Yes' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+const RELATIONSHIP_TO_HOH_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'Self (Head of Household)' },
+  { value: '2', label: "Head of Household's child" },
+  { value: '3', label: "Head of Household's spouse or partner" },
+  { value: '4', label: "Head of Household's other relation member" },
+  { value: '5', label: 'Other: non-relation member' },
+]
+
+const LENGTH_OF_STAY_OPTIONS: CodeOption[] = [
+  { value: '10', label: 'One night or less' },
+  { value: '11', label: 'Two to six nights' },
+  { value: '2', label: 'One week or more, but less than one month' },
+  { value: '3', label: 'One month or more, but less than 90 days' },
+  { value: '4', label: '90 days or more, but less than one year' },
+  { value: '5', label: 'One year or longer' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+const TIMES_HOMELESS_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'One time' },
+  { value: '2', label: 'Two times' },
+  { value: '3', label: 'Three times' },
+  { value: '4', label: 'Four or more times' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+// Months-homeless count values are normalized into the 1xx range to keep them
+// unique: the source schema reused codes 8/9 for both month counts and the
+// "doesn't know / prefers not to answer" data-quality responses. 101 = first
+// month, 102–112 = 2–12 months, 113 = more than 12 months.
+const MONTHS_HOMELESS_OPTIONS: CodeOption[] = [
+  { value: '101', label: 'One month (this time is the first month)' },
+  { value: '102', label: '2 months' },
+  { value: '103', label: '3 months' },
+  { value: '104', label: '4 months' },
+  { value: '105', label: '5 months' },
+  { value: '106', label: '6 months' },
+  { value: '107', label: '7 months' },
+  { value: '108', label: '8 months' },
+  { value: '109', label: '9 months' },
+  { value: '110', label: '10 months' },
+  { value: '111', label: '11 months' },
+  { value: '112', label: '12 months' },
+  { value: '113', label: 'More than 12 months' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+// Appendix A – Living Situation Option List (shared by Destination and Prior
+// Living Situation). The two sentinel values the schema's conditional logic
+// keys on are `rental_with_ongoing_subsidy` and `other`.
+const LIVING_SITUATION_OPTIONS: CodeOption[] = [
+  { value: 'place_not_meant_for_habitation', label: 'Place not meant for habitation (e.g., a vehicle, abandoned building, or anywhere outside)' },
+  { value: 'emergency_shelter', label: 'Emergency shelter, incl. hotel/motel paid with ES voucher, or RHY-funded Host Home shelter' },
+  { value: 'safe_haven', label: 'Safe Haven' },
+  { value: 'foster_care', label: 'Foster care home or foster care group home' },
+  { value: 'hospital_non_psychiatric', label: 'Hospital or other residential non-psychiatric medical facility' },
+  { value: 'jail_prison', label: 'Jail, prison or juvenile detention facility' },
+  { value: 'long_term_care', label: 'Long-term care facility or nursing home' },
+  { value: 'psychiatric', label: 'Psychiatric hospital or other psychiatric facility' },
+  { value: 'substance_abuse', label: 'Substance abuse treatment facility or detox center' },
+  { value: 'residential_no_homeless_criteria', label: 'Residential project or halfway house with no homeless criteria' },
+  { value: 'hotel_motel_no_voucher', label: 'Hotel or motel paid for without emergency shelter voucher' },
+  { value: 'staying_with_friend', label: "Staying or living in a friend's room, apartment or house" },
+  { value: 'staying_with_family', label: "Staying or living in a family member's room, apartment or house" },
+  { value: 'rental_no_subsidy', label: 'Rental by client, no ongoing housing subsidy' },
+  { value: 'rental_with_ongoing_subsidy', label: 'Rental by client, with ongoing housing subsidy' },
+  { value: 'owned_with_subsidy', label: 'Owned by client, with ongoing housing subsidy' },
+  { value: 'owned_no_subsidy', label: 'Owned by client, no ongoing housing subsidy' },
+  { value: 'permanent_housing_formerly_homeless', label: 'Permanent housing (other than RRH) for formerly homeless persons' },
+  { value: 'rapid_rehousing', label: 'Rapid re-housing' },
+  { value: 'transitional_housing', label: 'Transitional housing for homeless persons' },
+  { value: 'other', label: 'Other' },
+  { value: 'worker_unable_to_determine', label: 'Worker unable to determine' },
+  { value: 'client_doesnt_know', label: "Client doesn't know" },
+  { value: 'client_prefers_not_to_answer', label: 'Client prefers not to answer' },
+  { value: 'data_not_collected', label: 'Data not collected' },
+]
+
+// Appendix A – Rental Subsidy Type list (used when the residence is
+// `rental_with_ongoing_subsidy`).
+const HMIS_RENTAL_SUBSIDY_OPTIONS: CodeOption[] = [
+  { value: 'gpd_tip', label: 'GPD TIP housing subsidy' },
+  { value: 'vash', label: 'VASH housing subsidy (HUD-VASH)' },
+  { value: 'rrh', label: 'RRH or equivalent subsidy' },
+  { value: 'hcv', label: 'Housing Choice Voucher (tenant-based Section 8)' },
+  { value: 'public_housing', label: 'Public housing unit' },
+  { value: 'rental_subsidized', label: 'Rental by client in a subsidized housing unit' },
+  { value: 'other_ph_dedicated', label: 'Other permanent housing dedicated for formerly homeless persons' },
+  { value: 'other_subsidy', label: 'Other (non-TH) housing subsidy' },
+]
+
+// A select bound to a list of HUD code options. Stores `option.value`.
+function CodeSelect({
+  value,
+  onChange,
+  options,
+  className,
+  placeholder = 'Select',
+  ariaLabel,
+}: {
+  value: string
+  onChange: (v: string) => void
+  options: CodeOption[]
+  className?: string
+  placeholder?: string
+  ariaLabel?: string
+}) {
+  return (
+    <select aria-label={ariaLabel} value={value} onChange={(e) => onChange(e.target.value)} className={className}>
+      <option value="">{placeholder}</option>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+// ---------- Shared HUD code option lists ----------
+// Yes/No with the standard "don't know / prefers not / not collected" tail.
+const YES_NO_DK_OPTIONS: CodeOption[] = [
+  { value: '0', label: 'No' },
+  { value: '1', label: 'Yes' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+// Plain Yes/No (used by income source, non-cash, and insurance sub-fields).
+const YES_NO_OPTIONS: CodeOption[] = [
+  { value: '0', label: 'No' },
+  { value: '1', label: 'Yes' },
+]
+
+const SEX_OPTIONS: CodeOption[] = [
+  { value: '0', label: 'Female' },
+  { value: '1', label: 'Male' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+const SUBSTANCE_USE_OPTIONS: CodeOption[] = [
+  { value: '0', label: 'No' },
+  { value: '1', label: 'Alcohol use disorder' },
+  { value: '2', label: 'Drug use disorder' },
+  { value: '3', label: 'Both alcohol and drug use disorders' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+const DV_WHEN_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'Within the past three months' },
+  { value: '2', label: 'Three to six months ago (excluding six months exactly)' },
+  { value: '3', label: 'Six months to one year ago (excluding one year exactly)' },
+  { value: '4', label: 'One year ago, or more' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+const NO_INSURANCE_REASON_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'Applied; decision pending' },
+  { value: '2', label: 'Applied; client not eligible' },
+  { value: '3', label: 'Client did not apply' },
+  { value: '4', label: 'Insurance type N/A for this client' },
+  { value: '8', label: "Client doesn't know" },
+  { value: '9', label: 'Client prefers not to answer' },
+  { value: '99', label: 'Data not collected' },
+]
+
+// Coordinated Entry Event types (Data Element 4.20).
+const CE_EVENT_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'Referral to a Prevention Assistance project' },
+  { value: '2', label: 'Problem Solving/Diversion/Rapid Resolution intervention or service' },
+  { value: '3', label: 'Referral to a scheduled CE Crisis Needs Assessment' },
+  { value: '4', label: 'Referral to a scheduled CE Housing Needs Assessment' },
+  { value: '5', label: 'Referral to post-placement/follow-up case management' },
+  { value: '6', label: 'Referral to a Street Outreach project or services' },
+  { value: '7', label: 'Referral to a Housing Navigation project or services' },
+  { value: '8', label: 'Referral to Non-continuum services: Ineligible for continuum services' },
+  { value: '9', label: 'Referral to Non-continuum services: No availability in continuum services' },
+  { value: '10', label: 'Referral to Emergency Shelter bed opening' },
+  { value: '11', label: 'Referral to Transitional Housing bed/unit opening' },
+  { value: '12', label: 'Referral to Joint TH-RRH project/unit/resource opening' },
+  { value: '13', label: 'Referral to RRH project resource opening' },
+  { value: '14', label: 'Referral to PSH project resource opening' },
+  { value: '15', label: 'Referral to Other PH project/unit/resource opening' },
+  { value: '16', label: 'Referral to emergency assistance/flex fund/furniture assistance' },
+  { value: '17', label: 'Referral to a Housing Stability Voucher' },
+]
+// Event types that involve a housing/crisis project referral (need project + result).
+const CE_REFERRAL_EVENT_TYPES = new Set(['10', '11', '12', '13', '14', '15', '17'])
+
+const REFERRAL_RESULT_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'Successful referral: client accepted' },
+  { value: '2', label: 'Unsuccessful referral: client rejected' },
+  { value: '3', label: 'Unsuccessful referral: provider rejected' },
+]
+
+const CE_ASSESSMENT_TYPE_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'Phone' },
+  { value: '2', label: 'Virtual' },
+  { value: '3', label: 'In Person' },
+]
+const CE_ASSESSMENT_LEVEL_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'Crisis Needs Assessment' },
+  { value: '2', label: 'Housing Needs Assessment' },
+]
+const CE_PRIORITIZATION_OPTIONS: CodeOption[] = [
+  { value: '1', label: 'Placed on prioritization list' },
+  { value: '2', label: 'Not placed on prioritization list' },
+]
+
+// Source definitions that drive the Income / Non-Cash / Insurance sections.
+const INCOME_SOURCES: { key: string; label: string }[] = [
+  { key: 'earned', label: 'Earned income (employment)' },
+  { key: 'unemployment', label: 'Unemployment Insurance' },
+  { key: 'ssi', label: 'Supplemental Security Income (SSI)' },
+  { key: 'ssdi', label: 'Social Security Disability Insurance (SSDI)' },
+  { key: 'vaServiceConnected', label: 'VA Service-Connected Disability Compensation' },
+  { key: 'vaNonServiceConnected', label: 'VA Non-Service-Connected Disability Pension' },
+  { key: 'privateDisability', label: 'Private Disability Insurance' },
+  { key: 'workersComp', label: "Worker's Compensation" },
+  { key: 'tanf', label: 'Temporary Assistance for Needy Families (TANF)' },
+  { key: 'generalAssistance', label: 'General Assistance (GA)' },
+  { key: 'socialSecurityRetirement', label: 'Retirement Income from Social Security' },
+  { key: 'pension', label: 'Pension/Retirement from a former job' },
+  { key: 'childSupport', label: 'Child Support' },
+  { key: 'alimony', label: 'Alimony and other spousal support' },
+  { key: 'other', label: 'Other income source' },
+]
+const NONCASH_SOURCES: { key: string; label: string }[] = [
+  { key: 'snap', label: 'SNAP / Food Stamps' },
+  { key: 'wic', label: 'WIC' },
+  { key: 'tanfChildCare', label: 'TANF Child Care Services' },
+  { key: 'tanfTransportation', label: 'TANF Transportation Services' },
+  { key: 'otherTanf', label: 'Other TANF-Funded Services' },
+  { key: 'other', label: 'Other Non-Cash Benefit' },
+]
+const INSURANCE_TYPES: { key: string; label: string }[] = [
+  { key: 'medicaid', label: 'Medicaid' },
+  { key: 'medicare', label: 'Medicare' },
+  { key: 'schip', label: "State Children's Health Insurance Program (CHIP)" },
+  { key: 'vha', label: "Veteran's Health Administration (VHA)" },
+  { key: 'employer', label: 'Employer-Provided Health Insurance' },
+  { key: 'cobra', label: 'Health Insurance obtained through COBRA' },
+  { key: 'privatePay', label: 'Private Pay Health Insurance' },
+  { key: 'stateAdults', label: 'State Health Insurance for Adults' },
+  { key: 'indianHealth', label: 'Indian Health Services Program' },
+  { key: 'other', label: 'Other Health Insurance' },
+]
+
+// ---------- Nested record types & factories ----------
+interface AmountSource {
+  has: string
+  amount: string
+}
+interface IncomeRecord {
+  informationDate: string
+  fromAnySource: string
+  sources: Record<string, AmountSource>
+  otherName: string
+}
+interface NonCashRecord {
+  informationDate: string
+  fromAnySource: string
+  flags: Record<string, string>
+  otherSource: string
+}
+interface InsuranceRecord {
+  informationDate: string
+  covered: string
+  flags: Record<string, string>
+  otherSource: string
+  noInsuranceReason: string
+}
+interface CEEvent {
+  id: string
+  eventDate: string
+  eventType: string
+  diversionResult: string
+  aftercareResult: string
+  referralProjectId: string
+  referralResult: string
+  referralResultDate: string
+}
+interface CEAssessment {
+  id: string
+  assessmentDate: string
+  assessmentLocation: string
+  assessmentType: string
+  assessmentLevel: string
+  prioritizationStatus: string
+  notes: string
+}
+
+function emptyIncome(): IncomeRecord {
+  const sources: Record<string, AmountSource> = {}
+  for (const s of INCOME_SOURCES) sources[s.key] = { has: '', amount: '' }
+  return { informationDate: '', fromAnySource: '', sources, otherName: '' }
+}
+function emptyNonCash(): NonCashRecord {
+  const flags: Record<string, string> = {}
+  for (const s of NONCASH_SOURCES) flags[s.key] = ''
+  return { informationDate: '', fromAnySource: '', flags, otherSource: '' }
+}
+function emptyInsurance(): InsuranceRecord {
+  const flags: Record<string, string> = {}
+  for (const s of INSURANCE_TYPES) flags[s.key] = ''
+  return { informationDate: '', covered: '', flags, otherSource: '', noInsuranceReason: '' }
+}
+function generateSubId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 // ---------- Demo data ----------
 const DEMO_PROFILE: ClientProfile = {
   firstName: 'Maria',
   middleName: 'Elena',
   lastName: 'Santos',
-  suffix: 'None',
-  alias: 'Mari',
-  nameQuality: 'Full name reported',
-  dateOfBirth: '1985-06-12',
-  dobQuality: 'Full DOB reported',
-  ssn: '',
-  ssnQuality: '',
-  gender: ['Woman / Girl'],
-  genderOther: '',
-  pronouns: 'she/her',
-  sex: 'Female',
-  raceEthnicity: ['Hispanic/Latina/o'],
-  tribalAffiliation: '',
-  primaryLanguage: 'Spanish',
-  primaryLanguageOther: '',
-  hasDisability: 'No',
-  needsMobilityAccommodations: 'No',
-  mobilityFeatures: [],
-  mobilityFeaturesOther: '',
-  sensoryAccommodations: [],
-  veteranStatus: 'No',
-  branch: '',
-  discharge: '',
-  vashStatus: '',
-  emergencyContact: { name: 'Rosa Santos', phone: '(213) 555-0123', email: 'rosa.s@email.com' },
-  householdComposition: ['Head of household', 'Child'],
+  suffix: '',
+  nameDataQuality: '1',
+  ssn: '123456789',
+  ssnDataQuality: '1',
+  dob: '1985-06-12',
+  dobDataQuality: '1',
+  sex: '0',
+  raceEthnicity: ['4'],
+  raceEthnicityAdditional: '',
+  veteranStatus: '0',
+  disablingCondition: '1',
+  projectStartDate: '2026-05-13',
+  projectExitDate: '',
+  housingMoveInDate: '',
+  dateOfEngagement: '2026-05-15',
+  bedNightDates: [],
+  destinationType: 'staying_with_family',
+  destinationRentalSubsidyType: '',
+  destinationOtherDescription: '',
+  relationshipToHoH: '1',
+  cocCode: 'CA-600',
+  priorResidenceType: 'staying_with_family',
+  priorRentalSubsidyType: '',
+  lengthOfStay: '3',
+  homelessnessStartDate: '2026-02-01',
+  timesHomelessPast3Years: '2',
+  monthsHomelessPast3Years: '104',
+  income: {
+    ...emptyIncome(),
+    informationDate: '2026-05-13',
+    fromAnySource: '1',
+    sources: { ...emptyIncome().sources, earned: { has: '1', amount: '800' }, tanf: { has: '1', amount: '500' } },
+  },
+  nonCash: {
+    ...emptyNonCash(),
+    informationDate: '2026-05-13',
+    fromAnySource: '1',
+    flags: { ...emptyNonCash().flags, snap: '1', wic: '1' },
+  },
+  insurance: {
+    ...emptyInsurance(),
+    informationDate: '2026-05-13',
+    covered: '1',
+    flags: { ...emptyInsurance().flags, medicaid: '1' },
+  },
+  healthInfoDate: '2026-05-13',
+  physicalDisability: '0',
+  physicalDisabilityIndefinite: '',
+  developmentalDisability: '0',
+  chronicHealthCondition: '1',
+  chronicHealthIndefinite: '1',
+  hivAids: '0',
+  mentalHealthDisorder: '0',
+  mentalHealthIndefinite: '',
+  substanceUseDisorder: '0',
+  substanceUseIndefinite: '',
+  dvInfoDate: '2026-05-13',
+  survivorOfDV: '1',
+  dvWhenOccurred: '1',
+  dvCurrentlyFleeing: '1',
+  ceEvents: [],
+  ceAssessments: [],
   householdMembers: [
     { id: 'demo-hm-1', name: 'Maria Santos', memberType: 'Head of Household', startDate: '2026-05-13' },
     { id: 'demo-hm-2', name: 'Diego Santos', memberType: 'Son', startDate: '2026-05-13' },
   ],
   dateOfContact: '2026-05-13',
   currentLivingSituation: "Staying or living in a family member's room, apartment or house",
-  locationDetails: 'Sister\'s apartment, Echo Park',
+  locationDetails: "Sister's apartment, Echo Park",
   leavingWithin14Days: 'Yes',
   subsequentResidenceIdentified: 'No',
   resourcesForHousing: 'No',
   leaseInLast60Days: 'No',
   movedTwiceIn60Days: 'Yes',
-  rentalSubsidyType: '',
-  priorLivingSituation: 'Staying with family',
-  lengthOfStay: '1–3 months',
-  firstTimeHomeless: 'No',
-  timesHomelessPastYear: '2–3',
-  timesHomelessPast3Years: '2–3',
-  monthsHomelessPast3Years: '1–12 months',
-  physicalDisability: 'No',
-  chronicHealthCondition: 'Yes',
-  hivAids: 'No',
-  mentalHealthDisorder: 'No',
-  substanceUse: 'No',
-  survivorOfDV: 'Yes',
-  dvHowLongAgo: '< 3 months',
-  currentlyFleeing: 'Yes',
-  currentlyEmployed: 'No',
-  employmentType: '',
-  cashIncomeSources: ['TANF / CalWORKs', 'SNAP / CalFresh'],
-  cashIncomeOther: '',
-  nonCashBenefits: ['SNAP / CalFresh', 'WIC'],
-  nonCashOther: '',
-  coveredByInsurance: 'Yes',
-  insuranceTypes: ['Medicaid / Medi-Cal'],
-  insuranceOther: '',
-  highestEducation: 'High school',
-  sexualOrientation: 'Heterosexual',
-  sexualOrientationOther: '',
-  livedOutsideLACounty: 'No',
-  previousLocation: 'LA County',
-  translationNeeded: 'Yes',
-  preferredLanguage: 'Spanish',
-  preferredLanguageOther: '',
+  clsRentalSubsidyType: '',
+  clsInformationDate: '2026-05-13',
+  clsVerifiedBy: '',
 }
 
 // ---------- Empty profile ----------
@@ -302,31 +691,52 @@ const EMPTY_PROFILE: ClientProfile = {
   middleName: '',
   lastName: '',
   suffix: '',
-  alias: '',
-  nameQuality: '',
-  dateOfBirth: '',
-  dobQuality: '',
+  nameDataQuality: '',
   ssn: '',
-  ssnQuality: '',
-  gender: [],
-  genderOther: '',
-  pronouns: '',
+  ssnDataQuality: '',
+  dob: '',
+  dobDataQuality: '',
   sex: '',
   raceEthnicity: [],
-  tribalAffiliation: '',
-  primaryLanguage: '',
-  primaryLanguageOther: '',
-  hasDisability: '',
-  needsMobilityAccommodations: '',
-  mobilityFeatures: [],
-  mobilityFeaturesOther: '',
-  sensoryAccommodations: [],
+  raceEthnicityAdditional: '',
   veteranStatus: '',
-  branch: '',
-  discharge: '',
-  vashStatus: '',
-  emergencyContact: { name: '', phone: '', email: '' },
-  householdComposition: [],
+  disablingCondition: '',
+  projectStartDate: '',
+  projectExitDate: '',
+  housingMoveInDate: '',
+  dateOfEngagement: '',
+  bedNightDates: [],
+  destinationType: '',
+  destinationRentalSubsidyType: '',
+  destinationOtherDescription: '',
+  relationshipToHoH: '',
+  cocCode: '',
+  priorResidenceType: '',
+  priorRentalSubsidyType: '',
+  lengthOfStay: '',
+  homelessnessStartDate: '',
+  timesHomelessPast3Years: '',
+  monthsHomelessPast3Years: '',
+  income: emptyIncome(),
+  nonCash: emptyNonCash(),
+  insurance: emptyInsurance(),
+  healthInfoDate: '',
+  physicalDisability: '',
+  physicalDisabilityIndefinite: '',
+  developmentalDisability: '',
+  chronicHealthCondition: '',
+  chronicHealthIndefinite: '',
+  hivAids: '',
+  mentalHealthDisorder: '',
+  mentalHealthIndefinite: '',
+  substanceUseDisorder: '',
+  substanceUseIndefinite: '',
+  dvInfoDate: '',
+  survivorOfDV: '',
+  dvWhenOccurred: '',
+  dvCurrentlyFleeing: '',
+  ceEvents: [],
+  ceAssessments: [],
   householdMembers: [],
   dateOfContact: '',
   currentLivingSituation: '',
@@ -336,38 +746,9 @@ const EMPTY_PROFILE: ClientProfile = {
   resourcesForHousing: '',
   leaseInLast60Days: '',
   movedTwiceIn60Days: '',
-  rentalSubsidyType: '',
-  priorLivingSituation: '',
-  lengthOfStay: '',
-  firstTimeHomeless: '',
-  timesHomelessPastYear: '',
-  timesHomelessPast3Years: '',
-  monthsHomelessPast3Years: '',
-  physicalDisability: '',
-  chronicHealthCondition: '',
-  hivAids: '',
-  mentalHealthDisorder: '',
-  substanceUse: '',
-  survivorOfDV: '',
-  dvHowLongAgo: '',
-  currentlyFleeing: '',
-  currentlyEmployed: '',
-  employmentType: '',
-  cashIncomeSources: [],
-  cashIncomeOther: '',
-  nonCashBenefits: [],
-  nonCashOther: '',
-  coveredByInsurance: '',
-  insuranceTypes: [],
-  insuranceOther: '',
-  highestEducation: '',
-  sexualOrientation: '',
-  sexualOrientationOther: '',
-  livedOutsideLACounty: '',
-  previousLocation: '',
-  translationNeeded: '',
-  preferredLanguage: '',
-  preferredLanguageOther: '',
+  clsRentalSubsidyType: '',
+  clsInformationDate: '',
+  clsVerifiedBy: '',
 }
 
 // ---------- Section config for nav ----------
@@ -378,25 +759,23 @@ const TOP_NAV: { id: string; label: string }[] = [
 ]
 
 const SECTIONS: { id: string; label: string }[] = [
-  { id: 'profile', label: 'Client Profile' },
-  { id: 'identity', label: 'Identity & Basic Info' },
-  { id: 'gender', label: 'Gender & Identity' },
-  { id: 'race', label: 'Race & Ethnicity' },
-  { id: 'language', label: 'Language' },
-  { id: 'disability', label: 'Disability & ADA' },
-  { id: 'veteran', label: 'Veteran Status' },
-  { id: 'contact', label: 'Contact & Household' },
-  { id: 'current-living', label: 'Current Living Situation' },
-  { id: 'living', label: 'Current Living Situation' },
-  { id: 'homelessness', label: 'Homelessness History' },
-  { id: 'health', label: 'Health & Conditions' },
-  { id: 'dv', label: 'Domestic Violence / Safety' },
-  { id: 'employment', label: 'Employment & Income' },
-  { id: 'insurance', label: 'Health Insurance' },
-  { id: 'education', label: 'Education' },
-  { id: 'sexual-orientation', label: 'Sexual Orientation' },
-  { id: 'geography', label: 'Geography' },
-  { id: 'translation', label: 'Translation & Language Support' },
+  { id: 'client_name', label: 'Client Name' },
+  { id: 'ssn', label: 'Social Security Number' },
+  { id: 'date_of_birth', label: 'Date of Birth' },
+  { id: 'sex', label: 'Sex' },
+  { id: 'race_ethnicity', label: 'Race & Ethnicity' },
+  { id: 'veteran_status', label: 'Veteran Status' },
+  { id: 'disabling_condition', label: 'Disabling Condition' },
+  { id: 'enrollment_dates', label: 'Project Enrollment Dates' },
+  { id: 'destination', label: 'Destination at Exit' },
+  { id: 'relationship_hoh', label: 'Relationship to Head of Household' },
+  { id: 'coc_code', label: 'CoC Code' },
+  { id: 'prior_living_situation', label: 'Prior Living Situation' },
+  { id: 'income', label: 'Income from Any Source' },
+  { id: 'non_cash_benefits', label: 'Non-Cash Benefits' },
+  { id: 'health_insurance', label: 'Health Insurance' },
+  { id: 'disability_health', label: 'Disability & Health Conditions' },
+  { id: 'domestic_violence', label: 'Survivor of Domestic Violence' },
 ]
 
 // ---------- Reusable components ----------
@@ -421,58 +800,6 @@ function FormField({ label, required, error, children, className }: { label: str
         {children}
         {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
       </div>
-    </div>
-  )
-}
-
-function MultiSelectDropdown<T extends string>({
-  options,
-  value,
-  onChange,
-  otherOption,
-  otherValue,
-  onOtherChange,
-  className,
-}: {
-  options: T[]
-  value: T[]
-  onChange: (v: T[]) => void
-  otherOption?: T
-  otherValue?: string
-  onOtherChange?: (v: string) => void
-  className?: string
-}) {
-  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selected = Array.from(e.target.selectedOptions, (opt) => opt.value as T)
-    onChange(selected)
-  }
-  return (
-    <div className="space-y-2">
-      <select
-        multiple
-        value={value}
-        onChange={handleChange}
-        className={cn(
-          'w-full min-h-[80px] rounded border border-slate-200 bg-slate-50 py-2 pl-3 pr-8 text-sm text-slate-900 focus:border-blue-500 focus:outline-none',
-          className
-        )}
-      >
-        {options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
-        ))}
-      </select>
-      <p className="text-xs text-slate-500">Hold Ctrl (Windows) or Cmd (Mac) to select multiple.</p>
-      {otherOption && value.includes(otherOption) && onOtherChange !== undefined && (
-        <input
-          type="text"
-          value={otherValue ?? ''}
-          onChange={(e) => onOtherChange(e.target.value)}
-          placeholder="Specify"
-          className="w-full border-0 border-b border-slate-300 bg-transparent px-0 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
-        />
-      )}
     </div>
   )
 }
@@ -721,15 +1048,52 @@ function StickySectionNav({ sections, currentSectionId, onSectionChange }: { sec
   )
 }
 
+const COC_CODE_PATTERN = /^[A-Z]{2}-\d{3}$/
+
 function validateProfile(p: ClientProfile): string[] {
   const errs: string[] = []
-  const nameNotRequired = p.nameQuality === 'Partial / street name / code name' || p.nameQuality === "Client doesn't know"
-  const dobNotRequired = p.dobQuality === 'Approximate / partial' || p.dobQuality === "Client doesn't know"
-  if (!nameNotRequired && !p.firstName?.trim()) errs.push('First name')
-  if (!nameNotRequired && !p.lastName?.trim()) errs.push('Last name')
-  if (!dobNotRequired && !p.dateOfBirth?.trim()) errs.push('Date of birth')
-  if (!p.nameQuality) errs.push('Name quality')
-  if (!p.dobQuality) errs.push('DOB quality')
+  // Required data-quality / enum fields
+  if (!p.nameDataQuality) errs.push('Name Data Quality')
+  if (!p.ssnDataQuality) errs.push('SSN Data Quality')
+  if (!p.dobDataQuality) errs.push('DOB Data Quality')
+  // DOB codes 8/9/99 are not valid when a date is entered
+  if (p.dob && (p.dobDataQuality === '8' || p.dobDataQuality === '9' || p.dobDataQuality === '99')) {
+    errs.push('DOB conflicts with DOB Data Quality')
+  }
+  if (p.raceEthnicity.length === 0) errs.push('Race and Ethnicity')
+  if (!p.veteranStatus) errs.push('Veteran Status')
+  if (!p.disablingCondition) errs.push('Disabling Condition')
+  if (!p.projectStartDate?.trim()) errs.push('Project Start Date')
+  if (!p.destinationType) errs.push('Destination Type')
+  if (p.destinationType === 'other' && !p.destinationOtherDescription?.trim()) errs.push('Other Residence Description')
+  if (!p.relationshipToHoH) errs.push('Relationship to Head of Household')
+  if (!p.cocCode?.trim()) errs.push('CoC Code')
+  else if (!COC_CODE_PATTERN.test(p.cocCode.trim())) errs.push('CoC Code format (XX-XXX)')
+  if (!p.sex) errs.push('Sex')
+  if (!p.priorResidenceType) errs.push('Prior Living Situation')
+  if (!p.lengthOfStay) errs.push('Length of Stay')
+  if (!p.timesHomelessPast3Years) errs.push('Times Homeless (past 3 years)')
+  if (!p.monthsHomelessPast3Years) errs.push('Months Homeless (past 3 years)')
+  // Income / Non-Cash / Insurance
+  if (!p.income.informationDate?.trim()) errs.push('Income Information Date')
+  if (!p.income.fromAnySource) errs.push('Income from Any Source')
+  if (!p.nonCash.informationDate?.trim()) errs.push('Non-Cash Information Date')
+  if (!p.nonCash.fromAnySource) errs.push('Non-Cash Benefit from Any Source')
+  if (!p.insurance.informationDate?.trim()) errs.push('Insurance Information Date')
+  if (!p.insurance.covered) errs.push('Covered by Health Insurance')
+  // Disability & health conditions
+  if (!p.healthInfoDate?.trim()) errs.push('Health Information Date')
+  if (!p.physicalDisability) errs.push('Physical Disability')
+  if (!p.developmentalDisability) errs.push('Developmental Disability')
+  if (!p.chronicHealthCondition) errs.push('Chronic Health Condition')
+  if (!p.hivAids) errs.push('HIV/AIDS')
+  if (!p.mentalHealthDisorder) errs.push('Mental Health Disorder')
+  if (!p.substanceUseDisorder) errs.push('Substance Use Disorder')
+  // Domestic violence
+  if (!p.dvInfoDate?.trim()) errs.push('DV Information Date')
+  if (!p.survivorOfDV) errs.push('Survivor of Domestic Violence')
+  // Current Living Situation (Assessments tab)
+  if (!p.clsInformationDate?.trim()) errs.push('Current Living Situation Information Date')
   return errs
 }
 
@@ -792,13 +1156,13 @@ function buildSeedClients(): Client[] {
       id: generateClientId(),
       createdAt: daysAgo(6),
       caseManager: 'Priya Patel',
-      profile: { ...EMPTY_PROFILE, firstName: 'James', lastName: 'Okafor', nameQuality: 'Full name reported', dateOfContact: todayISO() },
+      profile: { ...EMPTY_PROFILE, firstName: 'James', lastName: 'Okafor', nameDataQuality: '1', dateOfContact: todayISO() },
     },
     {
       id: generateClientId(),
       createdAt: daysAgo(3),
       caseManager: 'Marcus Lee',
-      profile: { ...EMPTY_PROFILE, firstName: 'Lin', lastName: 'Tran', nameQuality: 'Full name reported', dateOfContact: todayISO() },
+      profile: { ...EMPTY_PROFILE, firstName: 'Lin', lastName: 'Tran', nameDataQuality: '1', dateOfContact: todayISO() },
     },
     {
       id: generateClientId(),
@@ -2328,11 +2692,85 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
     setClientProfile((prev) => ({ ...prev, [key]: value }))
   }, [])
 
-  const updateEmergency = useCallback((field: keyof EmergencyContact, value: string) => {
+  // Race/Ethnicity multi-select with mutual-exclusivity for codes 8/9/99.
+  const toggleRaceEthnicity = useCallback((code: string) => {
+    setClientProfile((prev) => {
+      const has = prev.raceEthnicity.includes(code)
+      let next: string[]
+      if (RACE_EXCLUSIVE_CODES.has(code)) {
+        next = has ? [] : [code]
+      } else {
+        const base = prev.raceEthnicity.filter((c) => !RACE_EXCLUSIVE_CODES.has(c))
+        next = has ? base.filter((c) => c !== code) : [...base, code]
+      }
+      return { ...prev, raceEthnicity: next }
+    })
+  }, [])
+
+  // ----- Nested record updaters -----
+  const updateIncomeField = useCallback((field: 'informationDate' | 'fromAnySource' | 'otherName', value: string) => {
+    setClientProfile((prev) => ({ ...prev, income: { ...prev.income, [field]: value } }))
+  }, [])
+  const updateIncomeSource = useCallback((key: string, part: 'has' | 'amount', value: string) => {
     setClientProfile((prev) => ({
       ...prev,
-      emergencyContact: { ...prev.emergencyContact, [field]: value },
+      income: { ...prev.income, sources: { ...prev.income.sources, [key]: { ...prev.income.sources[key], [part]: value } } },
     }))
+  }, [])
+  const updateNonCashField = useCallback((field: 'informationDate' | 'fromAnySource' | 'otherSource', value: string) => {
+    setClientProfile((prev) => ({ ...prev, nonCash: { ...prev.nonCash, [field]: value } }))
+  }, [])
+  const updateNonCashFlag = useCallback((key: string, value: string) => {
+    setClientProfile((prev) => ({ ...prev, nonCash: { ...prev.nonCash, flags: { ...prev.nonCash.flags, [key]: value } } }))
+  }, [])
+  const updateInsuranceField = useCallback((field: 'informationDate' | 'covered' | 'otherSource' | 'noInsuranceReason', value: string) => {
+    setClientProfile((prev) => ({ ...prev, insurance: { ...prev.insurance, [field]: value } }))
+  }, [])
+  const updateInsuranceFlag = useCallback((key: string, value: string) => {
+    setClientProfile((prev) => ({ ...prev, insurance: { ...prev.insurance, flags: { ...prev.insurance.flags, [key]: value } } }))
+  }, [])
+
+  // ----- Repeatable list handlers (bed nights, CE events, CE assessments) -----
+  const addBedNight = useCallback(() => {
+    setClientProfile((prev) => ({ ...prev, bedNightDates: [...prev.bedNightDates, todayISO()] }))
+  }, [])
+  const updateBedNight = useCallback((index: number, value: string) => {
+    setClientProfile((prev) => ({ ...prev, bedNightDates: prev.bedNightDates.map((d, i) => (i === index ? value : d)) }))
+  }, [])
+  const removeBedNight = useCallback((index: number) => {
+    setClientProfile((prev) => ({ ...prev, bedNightDates: prev.bedNightDates.filter((_, i) => i !== index) }))
+  }, [])
+
+  const addCEEvent = useCallback(() => {
+    setClientProfile((prev) => ({
+      ...prev,
+      ceEvents: [
+        ...prev.ceEvents,
+        { id: generateSubId('ce'), eventDate: todayISO(), eventType: '', diversionResult: '', aftercareResult: '', referralProjectId: '', referralResult: '', referralResultDate: '' },
+      ],
+    }))
+  }, [])
+  const updateCEEvent = useCallback((id: string, field: keyof CEEvent, value: string) => {
+    setClientProfile((prev) => ({ ...prev, ceEvents: prev.ceEvents.map((e) => (e.id === id ? { ...e, [field]: value } : e)) }))
+  }, [])
+  const removeCEEvent = useCallback((id: string) => {
+    setClientProfile((prev) => ({ ...prev, ceEvents: prev.ceEvents.filter((e) => e.id !== id) }))
+  }, [])
+
+  const addCEAssessment = useCallback(() => {
+    setClientProfile((prev) => ({
+      ...prev,
+      ceAssessments: [
+        ...prev.ceAssessments,
+        { id: generateSubId('cea'), assessmentDate: todayISO(), assessmentLocation: '', assessmentType: '', assessmentLevel: '', prioritizationStatus: '', notes: '' },
+      ],
+    }))
+  }, [])
+  const updateCEAssessment = useCallback((id: string, field: keyof CEAssessment, value: string) => {
+    setClientProfile((prev) => ({ ...prev, ceAssessments: prev.ceAssessments.map((a) => (a.id === id ? { ...a, [field]: value } : a)) }))
+  }, [])
+  const removeCEAssessment = useCallback((id: string) => {
+    setClientProfile((prev) => ({ ...prev, ceAssessments: prev.ceAssessments.filter((a) => a.id !== id) }))
   }, [])
 
   const openAddMember = useCallback(() => {
@@ -2394,32 +2832,10 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
 
   const errors = validateProfile(clientProfile)
 
-  const nameQualityOptions: NameQuality[] = ['Full name reported', 'Partial / street name / code name', "Client doesn't know", 'Client prefers not to answer', 'Data not collected']
-  const dobQualityOptions: DOBQuality[] = ['Full DOB reported', 'Approximate / partial', "Client doesn't know", 'Client prefers not to answer', 'Data not collected']
-  const ssnQualityOptions: SSNQuality[] = ['Full SSN', 'Approximate / partial', "Client doesn't know", 'Client prefers not to answer', 'Data not collected']
-  const genderOptions: GenderOption[] = ['Woman / Girl', 'Man / Boy', 'Culturally specific identity (e.g., Two-Spirit)', 'Transgender', 'Non-Binary', 'Questioning', 'Different identity (specify)', "Client doesn't know", 'Client prefers not to answer', 'Data not collected']
-  const sexOptions: SexOption[] = ['Female', 'Male', "Client doesn't know", 'Client prefers not to answer', 'Data not collected']
-  const raceOptions: RaceEthnicityOption[] = ['American Indian / Alaska Native / Indigenous', 'Asian / Asian American', 'Black / African American / African', 'Native Hawaiian / Pacific Islander', 'White', 'Hispanic/Latina/o', 'Middle Eastern / North African', "Client doesn't know", 'Client prefers not to answer', 'Data not collected']
-  const primaryLangOptions: PrimaryLanguageOption[] = ['English', 'Spanish', 'French', 'Italian', 'German', 'Greek', 'Polish', 'Portuguese', 'Russian', 'Swedish', 'American Sign Language', 'Other (specify)', "Client doesn't know", 'Client prefers not to answer']
-  const veteranOptions: VeteranStatusOption[] = ['Yes', 'No', "Don't know", 'Prefer not to answer', 'Data not collected']
-  const branchOptions: BranchOption[] = ['Army', 'Air Force', 'Navy', 'Marines', 'Coast Guard', 'Space Force']
-  const dischargeOptions: DischargeOption[] = ['Honorable', 'General', 'Other than honorable', 'Bad conduct', 'Dishonorable', 'Uncharacterized']
-  const vashOptions: VASHStatusOption[] = ['Admitted', 'Needs screening', 'Interested list', 'Vouchered', 'Various ineligible reasons']
-  const yesNoDk: YesNoDkRefused[] = ['Yes', 'No', "Don't know", 'Prefer not to answer', 'Refused', 'Data not collected']
-  const substanceOptions: SubstanceUseOption[] = ['No', 'Alcohol', 'Drug', 'Both']
-  const dvHowLongOptions: DVHowLongAgoOption[] = ['< 3 months', '3–6 months', '6–12 months', '1+ year']
-  const employmentTypeOptions: EmploymentTypeOption[] = ['Full-time', 'Part-time', 'Seasonal / day labor']
-  const cashIncomeOpts = ['Earned income', 'SSI', 'SSDI', 'Unemployment', 'TANF / CalWORKs', 'GA/GR', 'Pension', 'Child support', 'VA benefits', 'Other']
-  const nonCashOpts = ['SNAP / CalFresh', 'WIC', 'CalWORKs services', 'Other']
-  const insuranceTypeOpts = ['Medicaid / Medi-Cal', 'Medicare', 'VA', 'Employer insurance', 'Private', 'COBRA', 'Other']
-  const educationOptions: EducationOption[] = ['< Grade 5', 'Grades 5–6', 'Grades 7–8', 'Grades 9–11', 'High school', 'GED', 'Some college', 'Associate', 'Bachelor', 'Graduate', 'Vocational cert']
-  const sexualOrientationOptions: SexualOrientationOption[] = ['Heterosexual', 'Gay', 'Lesbian', 'Bisexual', 'Questioning', 'Other', "Don't know", 'Refused']
-  const geographyOptions: GeographyLocationOption[] = ['LA County', 'Other Southern CA', 'Other CA', 'Out of state', 'Outside U.S.']
-  const preferredLangOptions: PreferredLanguageOption[] = ['English', 'Spanish', 'Russian', 'French', 'Armenian', 'ASL', 'Portuguese', 'Chinese', 'Korean', 'Arabic', 'Other']
-  const householdOptions: HouseholdRelationOption[] = ['Head of household', 'Child', 'Spouse/partner', 'Other relation', 'Non-relation']
-  const mobilityOptions = ['Elevator / no stairs', 'Wheelchair accessible', 'Accessible tub/shower', 'Oxygen tank', 'Service animal', 'Other']
-  const sensoryOptions = ['Vision impairment', 'Hearing impairment']
-  const suffixOptions: SuffixOption[] = ['None', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V', 'MD', 'PhD', 'Other']
+  const totalMonthlyIncome = INCOME_SOURCES.reduce((sum, s) => {
+    const src = clientProfile.income.sources[s.key]
+    return sum + (src?.has === '1' ? parseFloat(src.amount) || 0 : 0)
+  }, 0)
 
   // SSN as three parts for display/edit
   const ssnParts = (() => {
@@ -2454,16 +2870,27 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
           <div className="mx-auto w-full max-w-3xl space-y-6">
             {currentSectionId === 'profile' && (
             <>
-            {/* Client Profile overview */}
-            <SectionCard id="profile" title="Client Profile">
-              <p className="text-sm text-slate-600">
-                {clientProfile.firstName || clientProfile.lastName
-                  ? `Profile for ${[clientProfile.firstName, clientProfile.lastName].filter(Boolean).join(' ')}. Complete the sections below.`
-                  : 'New client intake. Complete each section to build the client profile.'}
-              </p>
+            {/* 1. Client Name */}
+            <SectionCard id="client_name" title="Client Name">
+              <FormField label="First Name">
+                <input type="text" value={clientProfile.firstName} onChange={(e) => update('firstName', e.target.value)} className={inputBase} placeholder="First name" />
+              </FormField>
+              <FormField label="Middle Name">
+                <input type="text" value={clientProfile.middleName} onChange={(e) => update('middleName', e.target.value)} className={inputBase} placeholder="Middle name or initial" />
+              </FormField>
+              <FormField label="Last Name">
+                <input type="text" value={clientProfile.lastName} onChange={(e) => update('lastName', e.target.value)} className={inputBase} placeholder="Last name" />
+              </FormField>
+              <FormField label="Suffix">
+                <input type="text" value={clientProfile.suffix} onChange={(e) => update('suffix', e.target.value)} className={cn(inputBase, 'max-w-xs')} placeholder="e.g. Jr., Sr., III" />
+              </FormField>
+              <FormField label="Name Data Quality" required error={!clientProfile.nameDataQuality ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Name Data Quality" value={clientProfile.nameDataQuality} onChange={(v) => update('nameDataQuality', v as DataQualityCode | '')} options={NAME_DQ_OPTIONS} className={selectBase} />
+              </FormField>
             </SectionCard>
 
-            <SectionCard id="identity" title="Identity & Basic Info">
+            {/* 2. Social Security Number */}
+            <SectionCard id="ssn" title="Social Security Number">
               <FormField label="Social Security Number">
                 <div className="flex items-center gap-1">
                   <input type="text" inputMode="numeric" maxLength={3} value={ssnParts[0]} onChange={(e) => setSsnParts(e.target.value, ssnParts[1], ssnParts[2])} className={cn(inputBase, 'w-16 text-center')} placeholder="000" />
@@ -2473,404 +2900,325 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                   <input type="text" inputMode="numeric" maxLength={4} value={ssnParts[2]} onChange={(e) => setSsnParts(ssnParts[0], ssnParts[1], e.target.value)} className={cn(inputBase, 'w-20 text-center')} placeholder="0000" />
                 </div>
               </FormField>
-              <FormField label="Quality of SSN">
-                <select value={clientProfile.ssnQuality} onChange={(e) => update('ssnQuality', e.target.value as SSNQuality | '')} className={selectBase}>
-                  <option value="">Data not collected</option>
-                  {ssnQualityOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
-              </FormField>
-              <FormField label="Last Name" required={clientProfile.nameQuality !== 'Partial / street name / code name' && clientProfile.nameQuality !== "Client doesn't know"} error={clientProfile.nameQuality !== 'Partial / street name / code name' && clientProfile.nameQuality !== "Client doesn't know" && !clientProfile.lastName?.trim() ? 'Required' : undefined}>
-                <input type="text" value={clientProfile.lastName} onChange={(e) => update('lastName', e.target.value)} className={inputBase} placeholder="Last name" />
-              </FormField>
-              <FormField label="First Name" required={clientProfile.nameQuality !== 'Partial / street name / code name' && clientProfile.nameQuality !== "Client doesn't know"} error={clientProfile.nameQuality !== 'Partial / street name / code name' && clientProfile.nameQuality !== "Client doesn't know" && !clientProfile.firstName?.trim() ? 'Required' : undefined}>
-                <input type="text" value={clientProfile.firstName} onChange={(e) => update('firstName', e.target.value)} className={inputBase} placeholder="First name" />
-              </FormField>
-              <FormField label="Quality of Name" required error={!clientProfile.nameQuality ? 'Required' : undefined}>
-                <select value={clientProfile.nameQuality} onChange={(e) => update('nameQuality', e.target.value as NameQuality | '')} className={selectBase}>
-                  <option value="">Select</option>
-                  {nameQualityOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
-              </FormField>
-              <FormField label="Quality of DOB" required error={!clientProfile.dobQuality ? 'Required' : undefined}>
-                <select value={clientProfile.dobQuality} onChange={(e) => update('dobQuality', e.target.value as DOBQuality | '')} className={selectBase}>
-                  <option value="">Select</option>
-                  {dobQualityOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
-              </FormField>
-              <FormField label="Date of Birth" required={clientProfile.dobQuality !== 'Approximate / partial' && clientProfile.dobQuality !== "Client doesn't know"} error={clientProfile.dobQuality !== 'Approximate / partial' && clientProfile.dobQuality !== "Client doesn't know" && !clientProfile.dateOfBirth ? 'Required' : undefined}>
-                <input type="date" value={clientProfile.dateOfBirth} onChange={(e) => update('dateOfBirth', e.target.value)} className={inputBase} />
-              </FormField>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,180px)_1fr] sm:gap-6">
-                <label className="flex items-center text-sm font-medium text-slate-800">Middle Name</label>
-                <div className="flex gap-4">
-                  <input type="text" value={clientProfile.middleName} onChange={(e) => update('middleName', e.target.value)} className={cn(inputBase, 'flex-1')} placeholder="Middle name" />
-                  <div className="w-28 shrink-0">
-                    <label className="mb-1 block text-xs font-medium text-slate-500">Suffix</label>
-                    <select value={clientProfile.suffix || 'None'} onChange={(e) => update('suffix', e.target.value as SuffixOption | '')} className={selectBase}>
-                      {suffixOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-              <FormField label="Alias">
-                <input type="text" value={clientProfile.alias} onChange={(e) => update('alias', e.target.value)} className={inputBase} placeholder="Alias" />
+              <FormField label="SSN Data Quality" required error={!clientProfile.ssnDataQuality ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="SSN Data Quality" value={clientProfile.ssnDataQuality} onChange={(v) => update('ssnDataQuality', v as DataQualityCode | '')} options={SSN_DQ_OPTIONS} className={selectBase} />
               </FormField>
             </SectionCard>
 
-          <SectionCard id="gender" title="Gender & Identity">
-            <FormField label="Gender (multi-select)">
-              <MultiSelectDropdown options={genderOptions} value={clientProfile.gender} onChange={(v) => update('gender', v)} otherOption="Different identity (specify)" otherValue={clientProfile.genderOther} onOtherChange={(v) => update('genderOther', v)} />
-            </FormField>
-            <FormField label="Pronouns">
-              <input type="text" value={clientProfile.pronouns} onChange={(e) => update('pronouns', e.target.value)} className={inputBase} placeholder="e.g. she/her, they/them" />
-            </FormField>
-            <FormField label="Sex (funding field)">
-              <select value={clientProfile.sex} onChange={(e) => update('sex', e.target.value as SexOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {sexOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-          </SectionCard>
-
-          <SectionCard id="race" title="Race & Ethnicity">
-            <FormField label="Race / Ethnicity (multi-select)">
-              <MultiSelectDropdown options={raceOptions} value={clientProfile.raceEthnicity} onChange={(v) => update('raceEthnicity', v)} />
-            </FormField>
-            {clientProfile.raceEthnicity.some((r) => r.includes('American Indian') || r.includes('Alaska Native') || r.includes('Indigenous')) && (
-              <FormField label="Tribal Affiliation">
-                <input type="text" value={clientProfile.tribalAffiliation} onChange={(e) => update('tribalAffiliation', e.target.value)} className={inputBase} placeholder="If AI/AN" />
+            {/* 3. Date of Birth */}
+            <SectionCard id="date_of_birth" title="Date of Birth">
+              <FormField label="Date of Birth">
+                <input type="date" value={clientProfile.dob} onChange={(e) => update('dob', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-            )}
-          </SectionCard>
-
-          <SectionCard id="language" title="Language">
-            <FormField label="Primary Language">
-              <select value={clientProfile.primaryLanguage} onChange={(e) => update('primaryLanguage', e.target.value as PrimaryLanguageOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {primaryLangOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            {clientProfile.primaryLanguage === 'Other (specify)' && (
-              <FormField label="Other language">
-                <input type="text" value={clientProfile.primaryLanguageOther} onChange={(e) => update('primaryLanguageOther', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              <FormField label="DOB Data Quality" required error={!clientProfile.dobDataQuality ? 'Required' : clientProfile.dob && ['8', '9', '99'].includes(clientProfile.dobDataQuality) ? 'Not valid with a date entered' : undefined}>
+                <CodeSelect ariaLabel="Date of Birth Data Quality" value={clientProfile.dobDataQuality} onChange={(v) => update('dobDataQuality', v as DataQualityCode | '')} options={DOB_DQ_OPTIONS} className={selectBase} />
               </FormField>
-            )}
-          </SectionCard>
+            </SectionCard>
 
-          <SectionCard id="disability" title="Disability & ADA">
-            <FormField label="Has any disability">
-              <select value={clientProfile.hasDisability} onChange={(e) => update('hasDisability', e.target.value as 'Yes' | 'No' | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
-              </select>
-            </FormField>
-            <FormField label="Needs mobility accommodations">
-              <select value={clientProfile.needsMobilityAccommodations} onChange={(e) => update('needsMobilityAccommodations', e.target.value as 'Yes' | 'No' | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
-              </select>
-            </FormField>
-            <FormField label="Mobility features (multi-select)">
-              <MultiSelectDropdown options={mobilityOptions} value={clientProfile.mobilityFeatures} onChange={(v) => update('mobilityFeatures', v)} otherOption="Other" otherValue={clientProfile.mobilityFeaturesOther} onOtherChange={(v) => update('mobilityFeaturesOther', v)} />
-            </FormField>
-            <FormField label="Sensory accommodations (multi-select)">
-              <MultiSelectDropdown options={sensoryOptions} value={clientProfile.sensoryAccommodations} onChange={(v) => update('sensoryAccommodations', v)} />
-            </FormField>
-          </SectionCard>
+            {/* Sex */}
+            <SectionCard id="sex" title="Sex">
+              <FormField label="Sex" required error={!clientProfile.sex ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Sex" value={clientProfile.sex} onChange={(v) => update('sex', v)} options={SEX_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+            </SectionCard>
 
-          <SectionCard id="veteran" title="Veteran Status">
-            <FormField label="Veteran Status">
-              <select value={clientProfile.veteranStatus} onChange={(e) => update('veteranStatus', e.target.value as VeteranStatusOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {veteranOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            {clientProfile.veteranStatus === 'Yes' && (
-              <>
-                <FormField label="Branch">
-                  <select value={clientProfile.branch} onChange={(e) => update('branch', e.target.value as BranchOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                    <option value="">Select</option>
-                    {branchOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </FormField>
-                <FormField label="Discharge">
-                  <select value={clientProfile.discharge} onChange={(e) => update('discharge', e.target.value as DischargeOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                    <option value="">Select</option>
-                    {dischargeOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </FormField>
-                <FormField label="VASH Status">
-                  <select value={clientProfile.vashStatus} onChange={(e) => update('vashStatus', e.target.value as VASHStatusOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                    <option value="">Select</option>
-                    {vashOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </FormField>
-              </>
-            )}
-          </SectionCard>
-
-          <SectionCard id="contact" title="Contact & Household">
-            <FormField label="Emergency contact name">
-              <input type="text" value={clientProfile.emergencyContact.name} onChange={(e) => updateEmergency('name', e.target.value)} className={inputBase} />
-            </FormField>
-            <FormField label="Phone">
-              <input type="text" value={clientProfile.emergencyContact.phone} onChange={(e) => updateEmergency('phone', e.target.value)} className={inputBase} />
-            </FormField>
-            <FormField label="Email">
-              <input type="email" value={clientProfile.emergencyContact.email} onChange={(e) => updateEmergency('email', e.target.value)} className={inputBase} />
-            </FormField>
-            <FormField label="Household composition (multi-select)">
-              <MultiSelectDropdown options={householdOptions} value={clientProfile.householdComposition} onChange={(v) => update('householdComposition', v)} />
-            </FormField>
-
-            <div className="border-t border-slate-200 pt-5">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800">Household Members</h3>
-                <button
-                  type="button"
-                  onClick={openAddMember}
-                  aria-label="Add Household Member"
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Household Member
-                </button>
-              </div>
-              {clientProfile.householdMembers.length === 0 ? (
-                <p className="rounded border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-xs text-slate-500">
-                  No household members added.
-                </p>
-              ) : (
-                <ul className="divide-y divide-slate-200 overflow-hidden rounded border border-slate-200" aria-label="Household Members">
-                  {clientProfile.householdMembers.map((m) => (
-                    <li
-                      key={m.id}
-                      data-member-id={m.id}
-                      data-member-type={m.memberType}
-                      data-member-start-date={m.startDate}
-                      data-member-name={m.name}
-                      className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-slate-900">{m.name || <span className="italic text-slate-400">Unnamed</span>}</p>
-                        <p className="text-xs text-slate-500">
-                          <span aria-label="Member Type">{m.memberType || '—'}</span>
-                          <span className="mx-1.5 text-slate-300">|</span>
-                          <span aria-label="Start Date">{m.startDate || '—'}</span>
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openEditMember(m.id)}
-                          aria-label="Edit"
-                          className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          <Pencil className="h-3 w-3" />
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeMember(m.id)}
-                          aria-label="Remove"
-                          className="inline-flex items-center gap-1 rounded border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          Remove
-                        </button>
-                      </div>
-                    </li>
+            {/* 4. Race and Ethnicity */}
+            <SectionCard id="race_ethnicity" title="Race and Ethnicity">
+              <FormField label="Race and Ethnicity" required error={clientProfile.raceEthnicity.length === 0 ? 'Select at least one' : undefined}>
+                <fieldset className="space-y-2">
+                  <p className="text-xs text-slate-500">Select all that apply. &ldquo;Client doesn&rsquo;t know&rdquo;, &ldquo;prefers not to answer&rdquo;, and &ldquo;Data not collected&rdquo; cannot be combined with other selections.</p>
+                  {RACE_ETHNICITY_OPTIONS.map((o) => (
+                    <label key={o.value} className="flex items-start gap-2 text-sm text-slate-800">
+                      <input type="checkbox" checked={clientProfile.raceEthnicity.includes(o.value)} onChange={() => toggleRaceEthnicity(o.value)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                      <span>{o.label}</span>
+                    </label>
                   ))}
-                </ul>
+                </fieldset>
+              </FormField>
+              <FormField label="Additional Detail">
+                <input type="text" value={clientProfile.raceEthnicityAdditional} onChange={(e) => update('raceEthnicityAdditional', e.target.value)} className={inputBase} placeholder="Optional free-text" />
+              </FormField>
+            </SectionCard>
+
+            {/* 5. Veteran Status */}
+            <SectionCard id="veteran_status" title="Veteran Status">
+              <FormField label="Veteran Status" required error={!clientProfile.veteranStatus ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Veteran Status" value={clientProfile.veteranStatus} onChange={(v) => update('veteranStatus', v as VeteranCode | '')} options={VETERAN_STATUS_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+            </SectionCard>
+
+            {/* 6. Disabling Condition */}
+            <SectionCard id="disabling_condition" title="Disabling Condition">
+              <FormField label="Disabling Condition" required error={!clientProfile.disablingCondition ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Disabling Condition" value={clientProfile.disablingCondition} onChange={(v) => update('disablingCondition', v as DisablingCode | '')} options={DISABLING_CONDITION_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+            </SectionCard>
+
+            {/* 7. Project Enrollment Dates */}
+            <SectionCard id="enrollment_dates" title="Project Enrollment Dates">
+              <FormField label="Project Start Date" required error={!clientProfile.projectStartDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.projectStartDate} onChange={(e) => update('projectStartDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
+              <FormField label="Project Exit Date">
+                <input type="date" value={clientProfile.projectExitDate} onChange={(e) => update('projectExitDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
+              <FormField label="Housing Move-in Date">
+                <input type="date" value={clientProfile.housingMoveInDate} onChange={(e) => update('housingMoveInDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
+              <FormField label="Date of Engagement">
+                <input type="date" value={clientProfile.dateOfEngagement} onChange={(e) => update('dateOfEngagement', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
+              <div className="border-t border-slate-200 pt-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">Bed-Night Dates</h3>
+                    <p className="text-xs text-slate-500">Night-by-night shelters: one entry per bed night used.</p>
+                  </div>
+                  <button type="button" onClick={addBedNight} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Bed Night
+                  </button>
+                </div>
+                {clientProfile.bedNightDates.length === 0 ? (
+                  <p className="rounded border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-center text-xs text-slate-500">No bed nights recorded.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {clientProfile.bedNightDates.map((d, i) => (
+                      <li key={i} className="flex items-center gap-2">
+                        <input type="date" aria-label={`Bed-night date ${i + 1}`} value={d} onChange={(e) => updateBedNight(i, e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+                        <button type="button" onClick={() => removeBedNight(i)} aria-label="Remove bed night" className="rounded border border-red-200 bg-white p-1.5 text-red-600 hover:bg-red-50">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </SectionCard>
+
+            {/* 8. Destination at Exit */}
+            <SectionCard id="destination" title="Destination at Exit">
+              <FormField label="Type of Residence" required error={!clientProfile.destinationType ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Destination Type of Residence" value={clientProfile.destinationType} onChange={(v) => update('destinationType', v)} options={LIVING_SITUATION_OPTIONS} className={selectBase} />
+              </FormField>
+              {clientProfile.destinationType === 'rental_with_ongoing_subsidy' && (
+                <FormField label="Rental Subsidy Type">
+                  <CodeSelect ariaLabel="Destination Rental Subsidy Type" value={clientProfile.destinationRentalSubsidyType} onChange={(v) => update('destinationRentalSubsidyType', v)} options={HMIS_RENTAL_SUBSIDY_OPTIONS} className={selectBase} />
+                </FormField>
               )}
-            </div>
-          </SectionCard>
-
-          <SectionCard id="homelessness" title="Homelessness History">
-            <FormField label="First time homeless">
-              <select value={clientProfile.firstTimeHomeless} onChange={(e) => update('firstTimeHomeless', e.target.value as YesNoDkRefused | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {yesNoDk.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Times homeless (past year)">
-              <select value={clientProfile.timesHomelessPastYear} onChange={(e) => update('timesHomelessPastYear', e.target.value)} className={selectBase}>
-                <option value="">Select</option>
-                {['None', '1', '2–3', '4+'].map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Times homeless (past 3 years)">
-              <select value={clientProfile.timesHomelessPast3Years} onChange={(e) => update('timesHomelessPast3Years', e.target.value)} className={selectBase}>
-                <option value="">Select</option>
-                {['None', '1', '2–3', '4+'].map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Months homeless (past 3 years)">
-              <select value={clientProfile.monthsHomelessPast3Years} onChange={(e) => update('monthsHomelessPast3Years', e.target.value)} className={selectBase}>
-                <option value="">Select</option>
-                <option value="1–12 months">1–12 months</option>
-                <option value="More than 12">More than 12</option>
-              </select>
-            </FormField>
-          </SectionCard>
-
-          <SectionCard id="health" title="Health & Conditions">
-            <FormField label="Physical disability">
-              <select value={clientProfile.physicalDisability} onChange={(e) => update('physicalDisability', e.target.value as YesNoDkRefused | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {yesNoDk.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Chronic health condition">
-              <select value={clientProfile.chronicHealthCondition} onChange={(e) => update('chronicHealthCondition', e.target.value as YesNoDkRefused | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {yesNoDk.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="HIV/AIDS">
-              <select value={clientProfile.hivAids} onChange={(e) => update('hivAids', e.target.value as YesNoDkRefused | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {yesNoDk.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Mental health disorder">
-              <select value={clientProfile.mentalHealthDisorder} onChange={(e) => update('mentalHealthDisorder', e.target.value as YesNoDkRefused | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {yesNoDk.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Substance use">
-              <select value={clientProfile.substanceUse} onChange={(e) => update('substanceUse', e.target.value as SubstanceUseOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {substanceOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-          </SectionCard>
-
-          <SectionCard id="dv" title="Domestic Violence / Safety">
-            <FormField label="Survivor of DV / IPV">
-              <select value={clientProfile.survivorOfDV} onChange={(e) => update('survivorOfDV', e.target.value as YesNoDkRefused | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {yesNoDk.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            {clientProfile.survivorOfDV === 'Yes' && (
-              <>
-                <FormField label="How long ago">
-                  <select value={clientProfile.dvHowLongAgo} onChange={(e) => update('dvHowLongAgo', e.target.value as DVHowLongAgoOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                    <option value="">Select</option>
-                    {dvHowLongOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
+              {clientProfile.destinationType === 'other' && (
+                <FormField label="Other Residence Description" required error={!clientProfile.destinationOtherDescription.trim() ? 'Required' : undefined}>
+                  <input type="text" value={clientProfile.destinationOtherDescription} onChange={(e) => update('destinationOtherDescription', e.target.value)} className={inputBase} placeholder="Describe the residence" />
                 </FormField>
-                <FormField label="Currently fleeing">
-                  <select value={clientProfile.currentlyFleeing} onChange={(e) => update('currentlyFleeing', e.target.value as 'Yes' | 'No' | '')} className={cn(selectBase, 'max-w-xs')}>
-                    <option value="">Select</option>
-                    <option value="Yes">Yes</option>
-                    <option value="No">No</option>
-                  </select>
+              )}
+            </SectionCard>
+
+            {/* 9. Relationship to Head of Household */}
+            <SectionCard id="relationship_hoh" title="Relationship to Head of Household">
+              <FormField label="Relationship to HoH" required error={!clientProfile.relationshipToHoH ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Relationship to Head of Household" value={clientProfile.relationshipToHoH} onChange={(v) => update('relationshipToHoH', v as RelationshipCode | '')} options={RELATIONSHIP_TO_HOH_OPTIONS} className={selectBase} />
+              </FormField>
+            </SectionCard>
+
+            {/* 10. CoC Code */}
+            <SectionCard id="coc_code" title="CoC Code">
+              <FormField label="CoC Code" required error={!clientProfile.cocCode.trim() ? 'Required' : !COC_CODE_PATTERN.test(clientProfile.cocCode.trim()) ? 'Format must be XX-XXX (e.g., CA-501)' : undefined}>
+                <input type="text" value={clientProfile.cocCode} onChange={(e) => update('cocCode', e.target.value.toUpperCase())} className={cn(inputBase, 'max-w-xs')} placeholder="CA-501" />
+              </FormField>
+            </SectionCard>
+
+            {/* 11. Prior Living Situation */}
+            <SectionCard id="prior_living_situation" title="Prior Living Situation">
+              <FormField label="Type of Residence" required error={!clientProfile.priorResidenceType ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Prior Type of Residence" value={clientProfile.priorResidenceType} onChange={(v) => update('priorResidenceType', v)} options={LIVING_SITUATION_OPTIONS} className={selectBase} />
+              </FormField>
+              {clientProfile.priorResidenceType === 'rental_with_ongoing_subsidy' && (
+                <FormField label="Rental Subsidy Type">
+                  <CodeSelect ariaLabel="Prior Rental Subsidy Type" value={clientProfile.priorRentalSubsidyType} onChange={(v) => update('priorRentalSubsidyType', v)} options={HMIS_RENTAL_SUBSIDY_OPTIONS} className={selectBase} />
                 </FormField>
-              </>
-            )}
-          </SectionCard>
-
-          <SectionCard id="employment" title="Employment & Income">
-            <FormField label="Currently employed">
-              <select value={clientProfile.currentlyEmployed} onChange={(e) => update('currentlyEmployed', e.target.value as YesNoDkRefused | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {yesNoDk.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            {clientProfile.currentlyEmployed === 'Yes' && (
-              <FormField label="Employment type">
-                <select value={clientProfile.employmentType} onChange={(e) => update('employmentType', e.target.value as EmploymentTypeOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                  <option value="">Select</option>
-                  {employmentTypeOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
+              )}
+              <FormField label="Length of Stay" required error={!clientProfile.lengthOfStay ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Length of Stay in Prior Living Situation" value={clientProfile.lengthOfStay} onChange={(v) => update('lengthOfStay', v as LengthOfStayCode | '')} options={LENGTH_OF_STAY_OPTIONS} className={selectBase} />
               </FormField>
-            )}
-            <FormField label="Cash income sources (multi-select)">
-              <MultiSelectDropdown options={cashIncomeOpts} value={clientProfile.cashIncomeSources} onChange={(v) => update('cashIncomeSources', v)} otherOption="Other" otherValue={clientProfile.cashIncomeOther} onOtherChange={(v) => update('cashIncomeOther', v)} />
-            </FormField>
-            <FormField label="Non-cash benefits (multi-select)">
-              <MultiSelectDropdown options={nonCashOpts} value={clientProfile.nonCashBenefits} onChange={(v) => update('nonCashBenefits', v)} otherOption="Other" otherValue={clientProfile.nonCashOther} onOtherChange={(v) => update('nonCashOther', v)} />
-            </FormField>
-          </SectionCard>
-
-          <SectionCard id="insurance" title="Health Insurance">
-            <FormField label="Covered by insurance">
-              <select value={clientProfile.coveredByInsurance} onChange={(e) => update('coveredByInsurance', e.target.value as YesNoDkRefused | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {yesNoDk.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Types (multi-select)">
-              <MultiSelectDropdown options={insuranceTypeOpts} value={clientProfile.insuranceTypes} onChange={(v) => update('insuranceTypes', v)} otherOption="Other" otherValue={clientProfile.insuranceOther} onOtherChange={(v) => update('insuranceOther', v)} />
-            </FormField>
-          </SectionCard>
-
-          <SectionCard id="education" title="Education">
-            <FormField label="Highest education">
-              <select value={clientProfile.highestEducation} onChange={(e) => update('highestEducation', e.target.value as EducationOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {educationOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-          </SectionCard>
-
-          <SectionCard id="sexual-orientation" title="Sexual Orientation">
-            <FormField label="Sexual orientation">
-              <select value={clientProfile.sexualOrientation} onChange={(e) => update('sexualOrientation', e.target.value as SexualOrientationOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {sexualOrientationOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            {clientProfile.sexualOrientation === 'Other' && (
-              <FormField label="Other (specify)">
-                <input type="text" value={clientProfile.sexualOrientationOther} onChange={(e) => update('sexualOrientationOther', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              <FormField label="Homelessness Start Date">
+                <input type="date" value={clientProfile.homelessnessStartDate} onChange={(e) => update('homelessnessStartDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-            )}
-          </SectionCard>
-
-          <SectionCard id="geography" title="Geography">
-            <FormField label="Lived outside LA County">
-              <select value={clientProfile.livedOutsideLACounty} onChange={(e) => update('livedOutsideLACounty', e.target.value as 'Yes' | 'No' | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
-              </select>
-            </FormField>
-            {clientProfile.livedOutsideLACounty === 'Yes' && (
-              <FormField label="Previous location">
-                <select value={clientProfile.previousLocation} onChange={(e) => update('previousLocation', e.target.value as GeographyLocationOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                  <option value="">Select</option>
-                  {geographyOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
+              <FormField label="Times Homeless (past 3 yrs)" required error={!clientProfile.timesHomelessPast3Years ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Number of Times Homeless in Past 3 Years" value={clientProfile.timesHomelessPast3Years} onChange={(v) => update('timesHomelessPast3Years', v as TimesHomelessCode | '')} options={TIMES_HOMELESS_OPTIONS} className={selectBase} />
               </FormField>
-            )}
-          </SectionCard>
-
-          <SectionCard id="translation" title="Translation & Language Support">
-            <FormField label="Translation needed">
-              <select value={clientProfile.translationNeeded} onChange={(e) => update('translationNeeded', e.target.value as 'Yes' | 'No' | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
-              </select>
-            </FormField>
-            <FormField label="Preferred language">
-              <select value={clientProfile.preferredLanguage} onChange={(e) => update('preferredLanguage', e.target.value as PreferredLanguageOption | '')} className={cn(selectBase, 'max-w-xs')}>
-                <option value="">Select</option>
-                {preferredLangOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            {clientProfile.preferredLanguage === 'Other' && (
-              <FormField label="Other language">
-                <input type="text" value={clientProfile.preferredLanguageOther} onChange={(e) => update('preferredLanguageOther', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              <FormField label="Months Homeless (past 3 yrs)" required error={!clientProfile.monthsHomelessPast3Years ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Total Months Homeless in Past 3 Years" value={clientProfile.monthsHomelessPast3Years} onChange={(v) => update('monthsHomelessPast3Years', v)} options={MONTHS_HOMELESS_OPTIONS} className={selectBase} />
               </FormField>
-            )}
-          </SectionCard>
+            </SectionCard>
+
+            {/* Income from Any Source */}
+            <SectionCard id="income" title="Income from Any Source">
+              <FormField label="Information Date" required error={!clientProfile.income.informationDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.income.informationDate} onChange={(e) => updateIncomeField('informationDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
+              <FormField label="Income from Any Source" required error={!clientProfile.income.fromAnySource ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Income from Any Source" value={clientProfile.income.fromAnySource} onChange={(v) => updateIncomeField('fromAnySource', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+              {clientProfile.income.fromAnySource === '1' && (
+                <div className="space-y-3 border-t border-slate-200 pt-4">
+                  <p className="text-xs font-medium text-slate-500">Record each source the client receives and its monthly amount.</p>
+                  {INCOME_SOURCES.map((s) => {
+                    const src = clientProfile.income.sources[s.key]
+                    return (
+                      <div key={s.key} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
+                        <span className="text-sm text-slate-800">{s.label}</span>
+                        <CodeSelect ariaLabel={s.label} value={src.has} onChange={(v) => updateIncomeSource(s.key, 'has', v)} options={YES_NO_OPTIONS} className={cn(selectBase, 'sm:w-24')} />
+                        {src.has === '1' ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-sm text-slate-400">$</span>
+                            <input type="number" min="0" inputMode="decimal" aria-label={`${s.label} monthly amount`} value={src.amount} onChange={(e) => updateIncomeSource(s.key, 'amount', e.target.value)} className={cn(inputBase, 'w-24')} placeholder="0" />
+                            <span className="text-xs text-slate-400">/mo</span>
+                          </div>
+                        ) : (
+                          <span />
+                        )}
+                      </div>
+                    )
+                  })}
+                  {clientProfile.income.sources.other?.has === '1' && (
+                    <FormField label="Other income source name">
+                      <input type="text" value={clientProfile.income.otherName} onChange={(e) => updateIncomeField('otherName', e.target.value)} className={inputBase} placeholder="Specify source" />
+                    </FormField>
+                  )}
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-3 text-sm">
+                    <span className="font-medium text-slate-700">Total Monthly Income</span>
+                    <span className="font-semibold text-slate-900">${totalMonthlyIncome.toLocaleString()}</span>
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+
+            {/* Non-Cash Benefits */}
+            <SectionCard id="non_cash_benefits" title="Non-Cash Benefits">
+              <FormField label="Information Date" required error={!clientProfile.nonCash.informationDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.nonCash.informationDate} onChange={(e) => updateNonCashField('informationDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
+              <FormField label="Benefit from Any Source" required error={!clientProfile.nonCash.fromAnySource ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Non-Cash Benefit from Any Source" value={clientProfile.nonCash.fromAnySource} onChange={(v) => updateNonCashField('fromAnySource', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+              {clientProfile.nonCash.fromAnySource === '1' && (
+                <div className="space-y-3 border-t border-slate-200 pt-4">
+                  {NONCASH_SOURCES.map((s) => (
+                    <div key={s.key} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+                      <span className="text-sm text-slate-800">{s.label}</span>
+                      <CodeSelect ariaLabel={s.label} value={clientProfile.nonCash.flags[s.key]} onChange={(v) => updateNonCashFlag(s.key, v)} options={YES_NO_OPTIONS} className={cn(selectBase, 'sm:w-24')} />
+                    </div>
+                  ))}
+                  {clientProfile.nonCash.flags.other === '1' && (
+                    <FormField label="Other benefit source">
+                      <input type="text" value={clientProfile.nonCash.otherSource} onChange={(e) => updateNonCashField('otherSource', e.target.value)} className={inputBase} placeholder="Specify source" />
+                    </FormField>
+                  )}
+                </div>
+              )}
+            </SectionCard>
+
+            {/* Health Insurance */}
+            <SectionCard id="health_insurance" title="Health Insurance">
+              <FormField label="Information Date" required error={!clientProfile.insurance.informationDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.insurance.informationDate} onChange={(e) => updateInsuranceField('informationDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
+              <FormField label="Covered by Health Insurance" required error={!clientProfile.insurance.covered ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Covered by Health Insurance" value={clientProfile.insurance.covered} onChange={(v) => updateInsuranceField('covered', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+              {clientProfile.insurance.covered === '1' && (
+                <div className="space-y-3 border-t border-slate-200 pt-4">
+                  {INSURANCE_TYPES.map((s) => (
+                    <div key={s.key} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+                      <span className="text-sm text-slate-800">{s.label}</span>
+                      <CodeSelect ariaLabel={s.label} value={clientProfile.insurance.flags[s.key]} onChange={(v) => updateInsuranceFlag(s.key, v)} options={YES_NO_OPTIONS} className={cn(selectBase, 'sm:w-24')} />
+                    </div>
+                  ))}
+                  {clientProfile.insurance.flags.other === '1' && (
+                    <FormField label="Other insurance source">
+                      <input type="text" value={clientProfile.insurance.otherSource} onChange={(e) => updateInsuranceField('otherSource', e.target.value)} className={inputBase} placeholder="Specify source" />
+                    </FormField>
+                  )}
+                </div>
+              )}
+              {clientProfile.insurance.covered === '0' && (
+                <FormField label="Reason not covered (HOPWA)">
+                  <CodeSelect ariaLabel="Reason not covered" value={clientProfile.insurance.noInsuranceReason} onChange={(v) => updateInsuranceField('noInsuranceReason', v)} options={NO_INSURANCE_REASON_OPTIONS} className={selectBase} />
+                </FormField>
+              )}
+            </SectionCard>
+
+            {/* Disability & Health Conditions */}
+            <SectionCard id="disability_health" title="Disability & Health Conditions">
+              <FormField label="Information Date" required error={!clientProfile.healthInfoDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.healthInfoDate} onChange={(e) => update('healthInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
+              <p className="text-xs text-slate-500">For applicable conditions, indicate whether it is expected to be of long-continued and indefinite duration and substantially impairs the ability to live independently.</p>
+
+              <FormField label="Physical Disability" required error={!clientProfile.physicalDisability ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Physical Disability" value={clientProfile.physicalDisability} onChange={(v) => update('physicalDisability', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+              {clientProfile.physicalDisability === '1' && (
+                <FormField label="↳ Long-continuing & impairs independent living">
+                  <CodeSelect ariaLabel="Physical disability indefinite and impairs independent living" value={clientProfile.physicalDisabilityIndefinite} onChange={(v) => update('physicalDisabilityIndefinite', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+                </FormField>
+              )}
+
+              <FormField label="Developmental Disability" required error={!clientProfile.developmentalDisability ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Developmental Disability" value={clientProfile.developmentalDisability} onChange={(v) => update('developmentalDisability', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+
+              <FormField label="Chronic Health Condition" required error={!clientProfile.chronicHealthCondition ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Chronic Health Condition" value={clientProfile.chronicHealthCondition} onChange={(v) => update('chronicHealthCondition', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+              {clientProfile.chronicHealthCondition === '1' && (
+                <FormField label="↳ Long-continuing & impairs independent living">
+                  <CodeSelect ariaLabel="Chronic health condition indefinite and impairs independent living" value={clientProfile.chronicHealthIndefinite} onChange={(v) => update('chronicHealthIndefinite', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+                </FormField>
+              )}
+
+              <FormField label="HIV/AIDS" required error={!clientProfile.hivAids ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="HIV/AIDS" value={clientProfile.hivAids} onChange={(v) => update('hivAids', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+
+              <FormField label="Mental Health Disorder" required error={!clientProfile.mentalHealthDisorder ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Mental Health Disorder" value={clientProfile.mentalHealthDisorder} onChange={(v) => update('mentalHealthDisorder', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+              {clientProfile.mentalHealthDisorder === '1' && (
+                <FormField label="↳ Long-continuing & impairs independent living">
+                  <CodeSelect ariaLabel="Mental health disorder indefinite and impairs independent living" value={clientProfile.mentalHealthIndefinite} onChange={(v) => update('mentalHealthIndefinite', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+                </FormField>
+              )}
+
+              <FormField label="Substance Use Disorder" required error={!clientProfile.substanceUseDisorder ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Substance Use Disorder" value={clientProfile.substanceUseDisorder} onChange={(v) => update('substanceUseDisorder', v)} options={SUBSTANCE_USE_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+              {['1', '2', '3'].includes(clientProfile.substanceUseDisorder) && (
+                <FormField label="↳ Long-continuing & impairs independent living">
+                  <CodeSelect ariaLabel="Substance use disorder indefinite and impairs independent living" value={clientProfile.substanceUseIndefinite} onChange={(v) => update('substanceUseIndefinite', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+                </FormField>
+              )}
+            </SectionCard>
+
+            {/* Survivor of Domestic Violence */}
+            <SectionCard id="domestic_violence" title="Survivor of Domestic Violence">
+              <FormField label="Information Date" required error={!clientProfile.dvInfoDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.dvInfoDate} onChange={(e) => update('dvInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
+              <FormField label="Survivor of Domestic Violence" required error={!clientProfile.survivorOfDV ? 'Required' : undefined}>
+                <CodeSelect ariaLabel="Survivor of Domestic Violence" value={clientProfile.survivorOfDV} onChange={(v) => update('survivorOfDV', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+              </FormField>
+              {clientProfile.survivorOfDV === '1' && (
+                <>
+                  <FormField label="When experience occurred">
+                    <CodeSelect ariaLabel="When experience occurred" value={clientProfile.dvWhenOccurred} onChange={(v) => update('dvWhenOccurred', v)} options={DV_WHEN_OPTIONS} className={selectBase} />
+                  </FormField>
+                  <FormField label="Currently fleeing?">
+                    <CodeSelect ariaLabel="Currently fleeing" value={clientProfile.dvCurrentlyFleeing} onChange={(v) => update('dvCurrentlyFleeing', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+                  </FormField>
+                </>
+              )}
+            </SectionCard>
 
           {/* Collapsible JSON preview */}
           <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -2888,7 +3236,17 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
           )}
 
           {currentSectionId === 'assessments' && (
+            <>
             <SectionCard id="current-living" title="Current Living Situation">
+              <FormField label="Information Date" required error={!clientProfile.clsInformationDate ? 'Required' : undefined}>
+                <input
+                  type="date"
+                  aria-label="Information Date"
+                  value={clientProfile.clsInformationDate}
+                  onChange={(e) => update('clsInformationDate', e.target.value)}
+                  className={cn(inputBase, 'max-w-xs')}
+                />
+              </FormField>
               <FormField label="Date of Contact">
                 <input
                   type="date"
@@ -2924,14 +3282,24 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                   placeholder="Optional"
                 />
               </FormField>
+              <FormField label="Living Situation Verified By">
+                <input
+                  type="text"
+                  aria-label="Living Situation Verified By"
+                  value={clientProfile.clsVerifiedBy}
+                  onChange={(e) => update('clsVerifiedBy', e.target.value)}
+                  className={inputBase}
+                  placeholder="CE projects only"
+                />
+              </FormField>
 
               {clientProfile.currentLivingSituation === 'Rental by client, with ongoing housing subsidy' && (
                 <FormField label="Rental Subsidy Type">
                   <select
                     name="rental-subsidy-type"
                     aria-label="Rental Subsidy Type"
-                    value={clientProfile.rentalSubsidyType}
-                    onChange={(e) => update('rentalSubsidyType', e.target.value as RentalSubsidyTypeOption | '')}
+                    value={clientProfile.clsRentalSubsidyType}
+                    onChange={(e) => update('clsRentalSubsidyType', e.target.value as RentalSubsidyTypeOption | '')}
                     className={cn(selectBase, 'max-w-xs')}
                   >
                     <option value="">Select</option>
@@ -3012,6 +3380,116 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                 </>
               )}
             </SectionCard>
+
+            {/* Coordinated Entry Event (repeatable) */}
+            <SectionCard id="ce_event" title="Coordinated Entry Events">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-slate-500">Referrals and diversion interventions during a CE enrollment.</p>
+                <button type="button" onClick={addCEEvent} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Event
+                </button>
+              </div>
+              {clientProfile.ceEvents.length === 0 ? (
+                <p className="rounded border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-xs text-slate-500">No coordinated entry events.</p>
+              ) : (
+                <ul className="space-y-4">
+                  {clientProfile.ceEvents.map((ev) => (
+                    <li key={ev.id} className="rounded border border-slate-200 p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Event</span>
+                        <button type="button" onClick={() => removeCEEvent(ev.id)} aria-label="Remove event" className="rounded border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <FormField label="Date of Event" required error={!ev.eventDate ? 'Required' : undefined}>
+                          <input type="date" aria-label="Date of Event" value={ev.eventDate} onChange={(e) => updateCEEvent(ev.id, 'eventDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+                        </FormField>
+                        <FormField label="Event" required error={!ev.eventType ? 'Required' : undefined}>
+                          <CodeSelect ariaLabel="Event" value={ev.eventType} onChange={(v) => updateCEEvent(ev.id, 'eventType', v)} options={CE_EVENT_OPTIONS} className={selectBase} />
+                        </FormField>
+                        {ev.eventType === '2' && (
+                          <FormField label="Diversion result: client housed?">
+                            <CodeSelect ariaLabel="Problem Solving result client housed" value={ev.diversionResult} onChange={(v) => updateCEEvent(ev.id, 'diversionResult', v)} options={YES_NO_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+                          </FormField>
+                        )}
+                        {ev.eventType === '5' && (
+                          <FormField label="Enrolled in Aftercare project?">
+                            <CodeSelect ariaLabel="Enrolled in Aftercare project" value={ev.aftercareResult} onChange={(v) => updateCEEvent(ev.id, 'aftercareResult', v)} options={YES_NO_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+                          </FormField>
+                        )}
+                        {CE_REFERRAL_EVENT_TYPES.has(ev.eventType) && (
+                          <FormField label="Referral location (Project name / ID)">
+                            <input type="text" aria-label="Referral location" value={ev.referralProjectId} onChange={(e) => updateCEEvent(ev.id, 'referralProjectId', e.target.value)} className={inputBase} placeholder="Project name and/or HMIS Project ID" />
+                          </FormField>
+                        )}
+                        {CE_REFERRAL_EVENT_TYPES.has(ev.eventType) && ev.referralProjectId.trim() !== '' && (
+                          <>
+                            <FormField label="Referral Result">
+                              <CodeSelect ariaLabel="Referral Result" value={ev.referralResult} onChange={(v) => updateCEEvent(ev.id, 'referralResult', v)} options={REFERRAL_RESULT_OPTIONS} className={selectBase} />
+                            </FormField>
+                            {ev.referralResult !== '' && (
+                              <FormField label="Date of Result">
+                                <input type="date" aria-label="Date of Result" value={ev.referralResultDate} onChange={(e) => updateCEEvent(ev.id, 'referralResultDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+                              </FormField>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </SectionCard>
+
+            {/* Coordinated Entry Assessment (repeatable) */}
+            <SectionCard id="ce_assessment" title="Coordinated Entry Assessments">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-slate-500">CE assessments conducted during an enrollment.</p>
+                <button type="button" onClick={addCEAssessment} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Assessment
+                </button>
+              </div>
+              {clientProfile.ceAssessments.length === 0 ? (
+                <p className="rounded border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-xs text-slate-500">No coordinated entry assessments.</p>
+              ) : (
+                <ul className="space-y-4">
+                  {clientProfile.ceAssessments.map((a) => (
+                    <li key={a.id} className="rounded border border-slate-200 p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Assessment</span>
+                        <button type="button" onClick={() => removeCEAssessment(a.id)} aria-label="Remove assessment" className="rounded border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <FormField label="Date of Assessment" required error={!a.assessmentDate ? 'Required' : undefined}>
+                          <input type="date" aria-label="Date of Assessment" value={a.assessmentDate} onChange={(e) => updateCEAssessment(a.id, 'assessmentDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+                        </FormField>
+                        <FormField label="Assessment Location" required error={!a.assessmentLocation.trim() ? 'Required' : undefined}>
+                          <input type="text" aria-label="Assessment Location" value={a.assessmentLocation} onChange={(e) => updateCEAssessment(a.id, 'assessmentLocation', e.target.value)} className={inputBase} placeholder="Location" />
+                        </FormField>
+                        <FormField label="Assessment Type" required error={!a.assessmentType ? 'Required' : undefined}>
+                          <CodeSelect ariaLabel="Assessment Type" value={a.assessmentType} onChange={(v) => updateCEAssessment(a.id, 'assessmentType', v)} options={CE_ASSESSMENT_TYPE_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+                        </FormField>
+                        <FormField label="Assessment Level" required error={!a.assessmentLevel ? 'Required' : undefined}>
+                          <CodeSelect ariaLabel="Assessment Level" value={a.assessmentLevel} onChange={(v) => updateCEAssessment(a.id, 'assessmentLevel', v)} options={CE_ASSESSMENT_LEVEL_OPTIONS} className={cn(selectBase, 'max-w-md')} />
+                        </FormField>
+                        <FormField label="Prioritization Status" required error={!a.prioritizationStatus ? 'Required' : undefined}>
+                          <CodeSelect ariaLabel="Prioritization Status" value={a.prioritizationStatus} onChange={(v) => updateCEAssessment(a.id, 'prioritizationStatus', v)} options={CE_PRIORITIZATION_OPTIONS} className={selectBase} />
+                        </FormField>
+                        <FormField label="Questions / Answers / Results">
+                          <textarea aria-label="Assessment notes" value={a.notes} onChange={(e) => updateCEAssessment(a.id, 'notes', e.target.value)} rows={3} className={cn(selectBase, 'min-h-[72px]')} placeholder="Locally determined questions, answers, and results" />
+                        </FormField>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </SectionCard>
+            </>
           )}
 
           {currentSectionId === 'notes' && (
@@ -3109,7 +3587,7 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
       {/* Mobile section nav */}
       <div className="border-t border-slate-200 bg-white px-4 py-3 lg:hidden">
         <label className="block text-xs font-medium text-slate-500">Jump to section</label>
-        <select className="mt-1 w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm" onChange={(e) => { const id = e.target.value; if (id) { setCurrentSectionId(id); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }); } }}>
+        <select className="mt-1 w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm" onChange={(e) => { const id = e.target.value; if (id) { setCurrentSectionId('profile'); requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })); } }}>
           <option value="">Select section...</option>
           {SECTIONS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
