@@ -32,29 +32,6 @@ type MemberTypeOption =
   | 'Other relation'
   | 'Other'
   | 'Non-related household member'
-type CurrentLivingSituationOption =
-  | 'Place not meant for habitation (e.g., a vehicle, an abandoned building, bus/train/subway station/airport or anywhere outside)'
-  | 'Emergency shelter, including hotel or motel paid for with emergency shelter voucher, or RHY-funded Host Home shelter'
-  | 'Safe Haven'
-  | 'Foster care home or foster care group home'
-  | 'Hospital or other residential non-psychiatric medical facility'
-  | 'Jail, prison or juvenile detention facility'
-  | 'Long-term care facility or nursing home'
-  | 'Psychiatric hospital or other psychiatric facility'
-  | 'Substance abuse treatment facility or detox center'
-  | 'Residential project or halfway house with no homeless criteria'
-  | 'Hotel or motel paid for without emergency shelter voucher'
-  | "Staying or living in a friend's room, apartment or house"
-  | "Staying or living in a family member's room, apartment or house"
-  | 'Rental by client, no ongoing housing subsidy'
-  | 'Rental by client, with ongoing housing subsidy'
-  | 'Owned by client, with ongoing housing subsidy'
-  | 'Owned by client, no ongoing housing subsidy'
-  | 'Other'
-  | 'Worker unable to determine'
-  | 'Data not collected'
-type RentalSubsidyTypeOption = 'Government rental assistance' | 'Private rental assistance' | 'RRH' | 'VASH' | 'Other'
-type YesNoOption = 'Yes' | 'No' | ''
 type ProfileStatus = 'Draft' | 'In Review' | 'Complete'
 
 interface HouseholdMember {
@@ -114,16 +91,22 @@ interface ClientProfile {
   nonCash: NonCashRecord
   // Health Insurance
   insurance: InsuranceRecord
-  // Disability & Health Conditions (shared information date)
-  healthInfoDate: string
+  // Disability & Health Conditions (each element is its own section with its
+  // own information date, per the HMIS schema)
+  physicalDisabilityInfoDate: string
   physicalDisability: string
   physicalDisabilityIndefinite: string
+  developmentalDisabilityInfoDate: string
   developmentalDisability: string
+  chronicHealthInfoDate: string
   chronicHealthCondition: string
   chronicHealthIndefinite: string
+  hivAidsInfoDate: string
   hivAids: string
+  mentalHealthInfoDate: string
   mentalHealthDisorder: string
   mentalHealthIndefinite: string
+  substanceUseInfoDate: string
   substanceUseDisorder: string
   substanceUseIndefinite: string
   // Survivor of Domestic Violence
@@ -138,15 +121,14 @@ interface ClientProfile {
   // ----- Retained operational fields (used by Household & Assessments tabs,
   // not part of the HMIS profile schema) -----
   householdMembers: HouseholdMember[]
-  dateOfContact: string
-  currentLivingSituation: CurrentLivingSituationOption | ''
+  currentLivingSituation: string
   locationDetails: string
-  leavingWithin14Days: YesNoOption
-  subsequentResidenceIdentified: YesNoOption
-  resourcesForHousing: YesNoOption
-  leaseInLast60Days: YesNoOption
-  movedTwiceIn60Days: YesNoOption
-  clsRentalSubsidyType: RentalSubsidyTypeOption | ''
+  leavingWithin14Days: string
+  subsequentResidenceIdentified: string
+  resourcesForHousing: string
+  leaseInLast60Days: string
+  movedTwiceIn60Days: string
+  clsRentalSubsidyType: string
   clsInformationDate: string
   clsVerifiedBy: string
 }
@@ -176,46 +158,17 @@ const MEMBER_TYPE_OPTIONS: MemberTypeOption[] = [
   'Non-related household member',
 ]
 
-const CURRENT_LIVING_SITUATION_OPTIONS: CurrentLivingSituationOption[] = [
-  'Place not meant for habitation (e.g., a vehicle, an abandoned building, bus/train/subway station/airport or anywhere outside)',
-  'Emergency shelter, including hotel or motel paid for with emergency shelter voucher, or RHY-funded Host Home shelter',
-  'Safe Haven',
-  'Foster care home or foster care group home',
-  'Hospital or other residential non-psychiatric medical facility',
-  'Jail, prison or juvenile detention facility',
-  'Long-term care facility or nursing home',
-  'Psychiatric hospital or other psychiatric facility',
-  'Substance abuse treatment facility or detox center',
-  'Residential project or halfway house with no homeless criteria',
-  'Hotel or motel paid for without emergency shelter voucher',
-  "Staying or living in a friend's room, apartment or house",
-  "Staying or living in a family member's room, apartment or house",
-  'Rental by client, no ongoing housing subsidy',
-  'Rental by client, with ongoing housing subsidy',
-  'Owned by client, with ongoing housing subsidy',
-  'Owned by client, no ongoing housing subsidy',
-  'Other',
-  'Worker unable to determine',
-  'Data not collected',
-]
-
-const TEMP_OR_PERM_HOUSING_OPTIONS: CurrentLivingSituationOption[] = [
-  "Staying or living in a friend's room, apartment or house",
-  "Staying or living in a family member's room, apartment or house",
-  'Rental by client, no ongoing housing subsidy',
-  'Rental by client, with ongoing housing subsidy',
-  'Owned by client, with ongoing housing subsidy',
-  'Owned by client, no ongoing housing subsidy',
-  'Other',
-  'Worker unable to determine',
-]
-
-const RENTAL_SUBSIDY_TYPE_OPTIONS: RentalSubsidyTypeOption[] = [
-  'Government rental assistance',
-  'Private rental assistance',
-  'RRH',
-  'VASH',
-  'Other',
+// Current Living Situation values that trigger the temporary/permanent housing
+// follow-up questions (stored as Appendix A codes).
+const TEMP_OR_PERM_HOUSING_OPTIONS: string[] = [
+  'staying_with_friend',
+  'staying_with_family',
+  'rental_no_subsidy',
+  'rental_with_ongoing_subsidy',
+  'owned_with_subsidy',
+  'owned_no_subsidy',
+  'other',
+  'worker_unable_to_determine',
 ]
 
 function generateMemberId(): string {
@@ -651,15 +604,20 @@ const DEMO_PROFILE: ClientProfile = {
     covered: '1',
     flags: { ...emptyInsurance().flags, medicaid: '1' },
   },
-  healthInfoDate: '2026-05-13',
+  physicalDisabilityInfoDate: '2026-05-13',
   physicalDisability: '0',
   physicalDisabilityIndefinite: '',
+  developmentalDisabilityInfoDate: '2026-05-13',
   developmentalDisability: '0',
+  chronicHealthInfoDate: '2026-05-13',
   chronicHealthCondition: '1',
   chronicHealthIndefinite: '1',
+  hivAidsInfoDate: '2026-05-13',
   hivAids: '0',
+  mentalHealthInfoDate: '2026-05-13',
   mentalHealthDisorder: '0',
   mentalHealthIndefinite: '',
+  substanceUseInfoDate: '2026-05-13',
   substanceUseDisorder: '0',
   substanceUseIndefinite: '',
   dvInfoDate: '2026-05-13',
@@ -672,14 +630,13 @@ const DEMO_PROFILE: ClientProfile = {
     { id: 'demo-hm-1', name: 'Maria Santos', memberType: 'Head of Household', startDate: '2026-05-13' },
     { id: 'demo-hm-2', name: 'Diego Santos', memberType: 'Son', startDate: '2026-05-13' },
   ],
-  dateOfContact: '2026-05-13',
-  currentLivingSituation: "Staying or living in a family member's room, apartment or house",
+  currentLivingSituation: 'staying_with_family',
   locationDetails: "Sister's apartment, Echo Park",
-  leavingWithin14Days: 'Yes',
-  subsequentResidenceIdentified: 'No',
-  resourcesForHousing: 'No',
-  leaseInLast60Days: 'No',
-  movedTwiceIn60Days: 'Yes',
+  leavingWithin14Days: '1',
+  subsequentResidenceIdentified: '0',
+  resourcesForHousing: '0',
+  leaseInLast60Days: '0',
+  movedTwiceIn60Days: '1',
   clsRentalSubsidyType: '',
   clsInformationDate: '2026-05-13',
   clsVerifiedBy: '',
@@ -720,15 +677,20 @@ const EMPTY_PROFILE: ClientProfile = {
   income: emptyIncome(),
   nonCash: emptyNonCash(),
   insurance: emptyInsurance(),
-  healthInfoDate: '',
+  physicalDisabilityInfoDate: '',
   physicalDisability: '',
   physicalDisabilityIndefinite: '',
+  developmentalDisabilityInfoDate: '',
   developmentalDisability: '',
+  chronicHealthInfoDate: '',
   chronicHealthCondition: '',
   chronicHealthIndefinite: '',
+  hivAidsInfoDate: '',
   hivAids: '',
+  mentalHealthInfoDate: '',
   mentalHealthDisorder: '',
   mentalHealthIndefinite: '',
+  substanceUseInfoDate: '',
   substanceUseDisorder: '',
   substanceUseIndefinite: '',
   dvInfoDate: '',
@@ -738,7 +700,6 @@ const EMPTY_PROFILE: ClientProfile = {
   ceEvents: [],
   ceAssessments: [],
   householdMembers: [],
-  dateOfContact: '',
   currentLivingSituation: '',
   locationDetails: '',
   leavingWithin14Days: '',
@@ -1032,7 +993,10 @@ function StickySectionNav({ sections, currentSectionId, onSectionChange }: { sec
             <li key={s.id}>
               <a
                 href={`#${s.id}`}
-                onClick={() => onSectionChange(s.id)}
+                onClick={(e) => {
+                  e.preventDefault()
+                  onSectionChange(s.id)
+                }}
                 className={cn(
                   'block rounded px-3 py-2.5 text-sm font-medium transition-colors',
                   isActive ? 'bg-[#606C7B] text-white' : 'text-slate-300 hover:bg-slate-600/50 hover:text-white'
@@ -1081,13 +1045,18 @@ function validateProfile(p: ClientProfile): string[] {
   if (!p.nonCash.fromAnySource) errs.push('Non-Cash Benefit from Any Source')
   if (!p.insurance.informationDate?.trim()) errs.push('Insurance Information Date')
   if (!p.insurance.covered) errs.push('Covered by Health Insurance')
-  // Disability & health conditions
-  if (!p.healthInfoDate?.trim()) errs.push('Health Information Date')
+  // Disability & health conditions (each is its own section with its own date)
+  if (!p.physicalDisabilityInfoDate?.trim()) errs.push('Physical Disability Information Date')
   if (!p.physicalDisability) errs.push('Physical Disability')
+  if (!p.developmentalDisabilityInfoDate?.trim()) errs.push('Developmental Disability Information Date')
   if (!p.developmentalDisability) errs.push('Developmental Disability')
+  if (!p.chronicHealthInfoDate?.trim()) errs.push('Chronic Health Condition Information Date')
   if (!p.chronicHealthCondition) errs.push('Chronic Health Condition')
+  if (!p.hivAidsInfoDate?.trim()) errs.push('HIV/AIDS Information Date')
   if (!p.hivAids) errs.push('HIV/AIDS')
+  if (!p.mentalHealthInfoDate?.trim()) errs.push('Mental Health Disorder Information Date')
   if (!p.mentalHealthDisorder) errs.push('Mental Health Disorder')
+  if (!p.substanceUseInfoDate?.trim()) errs.push('Substance Use Disorder Information Date')
   if (!p.substanceUseDisorder) errs.push('Substance Use Disorder')
   // Domestic violence
   if (!p.dvInfoDate?.trim()) errs.push('DV Information Date')
@@ -1156,19 +1125,19 @@ function buildSeedClients(): Client[] {
       id: generateClientId(),
       createdAt: daysAgo(6),
       caseManager: 'Priya Patel',
-      profile: { ...EMPTY_PROFILE, firstName: 'James', lastName: 'Okafor', nameDataQuality: '1', dateOfContact: todayISO() },
+      profile: { ...EMPTY_PROFILE, firstName: 'James', lastName: 'Okafor', nameDataQuality: '1' },
     },
     {
       id: generateClientId(),
       createdAt: daysAgo(3),
       caseManager: 'Marcus Lee',
-      profile: { ...EMPTY_PROFILE, firstName: 'Lin', lastName: 'Tran', nameDataQuality: '1', dateOfContact: todayISO() },
+      profile: { ...EMPTY_PROFILE, firstName: 'Lin', lastName: 'Tran', nameDataQuality: '1' },
     },
     {
       id: generateClientId(),
       createdAt: daysAgo(1),
       caseManager: 'Elena Rodríguez',
-      profile: { ...EMPTY_PROFILE, dateOfContact: todayISO() },
+      profile: { ...EMPTY_PROFILE },
     },
   ]
 }
@@ -2677,7 +2646,7 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
     return all.find((c) => c.id === clientId) ?? null
   })()
   const [clientProfile, setClientProfile] = useState<ClientProfile>(
-    () => initialClient?.profile ?? { ...EMPTY_PROFILE, dateOfContact: todayISO() }
+    () => initialClient?.profile ?? { ...EMPTY_PROFILE }
   )
   const [profileStatus, setProfileStatus] = useState<ProfileStatus>('Draft')
   const [jsonPreviewOpen, setJsonPreviewOpen] = useState(false)
@@ -2821,7 +2790,7 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
   }, [clientProfile, clientId])
 
   const handleReset = useCallback(() => {
-    setClientProfile({ ...EMPTY_PROFILE, dateOfContact: todayISO() })
+    setClientProfile({ ...EMPTY_PROFILE })
     setProfileStatus('Draft')
   }, [])
 
@@ -3148,13 +3117,11 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
               )}
             </SectionCard>
 
-            {/* Disability & Health Conditions */}
-            <SectionCard id="disability_health" title="Disability & Health Conditions">
-              <FormField label="Information Date" required error={!clientProfile.healthInfoDate ? 'Required' : undefined}>
-                <input type="date" value={clientProfile.healthInfoDate} onChange={(e) => update('healthInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+            {/* Physical Disability */}
+            <SectionCard id="physical_disability" title="Physical Disability">
+              <FormField label="Information Date" required error={!clientProfile.physicalDisabilityInfoDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.physicalDisabilityInfoDate} onChange={(e) => update('physicalDisabilityInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <p className="text-xs text-slate-500">For applicable conditions, indicate whether it is expected to be of long-continued and indefinite duration and substantially impairs the ability to live independently.</p>
-
               <FormField label="Physical Disability" required error={!clientProfile.physicalDisability ? 'Required' : undefined}>
                 <CodeSelect ariaLabel="Physical Disability" value={clientProfile.physicalDisability} onChange={(v) => update('physicalDisability', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
@@ -3163,11 +3130,23 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                   <CodeSelect ariaLabel="Physical disability indefinite and impairs independent living" value={clientProfile.physicalDisabilityIndefinite} onChange={(v) => update('physicalDisabilityIndefinite', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
                 </FormField>
               )}
+            </SectionCard>
 
+            {/* Developmental Disability */}
+            <SectionCard id="developmental_disability" title="Developmental Disability">
+              <FormField label="Information Date" required error={!clientProfile.developmentalDisabilityInfoDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.developmentalDisabilityInfoDate} onChange={(e) => update('developmentalDisabilityInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
               <FormField label="Developmental Disability" required error={!clientProfile.developmentalDisability ? 'Required' : undefined}>
                 <CodeSelect ariaLabel="Developmental Disability" value={clientProfile.developmentalDisability} onChange={(v) => update('developmentalDisability', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
+            </SectionCard>
 
+            {/* Chronic Health Condition */}
+            <SectionCard id="chronic_health_condition" title="Chronic Health Condition">
+              <FormField label="Information Date" required error={!clientProfile.chronicHealthInfoDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.chronicHealthInfoDate} onChange={(e) => update('chronicHealthInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
               <FormField label="Chronic Health Condition" required error={!clientProfile.chronicHealthCondition ? 'Required' : undefined}>
                 <CodeSelect ariaLabel="Chronic Health Condition" value={clientProfile.chronicHealthCondition} onChange={(v) => update('chronicHealthCondition', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
@@ -3176,11 +3155,23 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                   <CodeSelect ariaLabel="Chronic health condition indefinite and impairs independent living" value={clientProfile.chronicHealthIndefinite} onChange={(v) => update('chronicHealthIndefinite', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
                 </FormField>
               )}
+            </SectionCard>
 
+            {/* HIV/AIDS */}
+            <SectionCard id="hiv_aids" title="HIV/AIDS">
+              <FormField label="Information Date" required error={!clientProfile.hivAidsInfoDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.hivAidsInfoDate} onChange={(e) => update('hivAidsInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
               <FormField label="HIV/AIDS" required error={!clientProfile.hivAids ? 'Required' : undefined}>
                 <CodeSelect ariaLabel="HIV/AIDS" value={clientProfile.hivAids} onChange={(v) => update('hivAids', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
+            </SectionCard>
 
+            {/* Mental Health Disorder */}
+            <SectionCard id="mental_health_disorder" title="Mental Health Disorder">
+              <FormField label="Information Date" required error={!clientProfile.mentalHealthInfoDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.mentalHealthInfoDate} onChange={(e) => update('mentalHealthInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
               <FormField label="Mental Health Disorder" required error={!clientProfile.mentalHealthDisorder ? 'Required' : undefined}>
                 <CodeSelect ariaLabel="Mental Health Disorder" value={clientProfile.mentalHealthDisorder} onChange={(v) => update('mentalHealthDisorder', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
@@ -3189,7 +3180,13 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                   <CodeSelect ariaLabel="Mental health disorder indefinite and impairs independent living" value={clientProfile.mentalHealthIndefinite} onChange={(v) => update('mentalHealthIndefinite', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
                 </FormField>
               )}
+            </SectionCard>
 
+            {/* Substance Use Disorder */}
+            <SectionCard id="substance_use_disorder" title="Substance Use Disorder">
+              <FormField label="Information Date" required error={!clientProfile.substanceUseInfoDate ? 'Required' : undefined}>
+                <input type="date" value={clientProfile.substanceUseInfoDate} onChange={(e) => update('substanceUseInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
+              </FormField>
               <FormField label="Substance Use Disorder" required error={!clientProfile.substanceUseDisorder ? 'Required' : undefined}>
                 <CodeSelect ariaLabel="Substance Use Disorder" value={clientProfile.substanceUseDisorder} onChange={(v) => update('substanceUseDisorder', v)} options={SUBSTANCE_USE_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
@@ -3247,41 +3244,28 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                   className={cn(inputBase, 'max-w-xs')}
                 />
               </FormField>
-              <FormField label="Date of Contact">
-                <input
-                  type="date"
-                  name="date-of-contact"
-                  aria-label="Date of Contact"
-                  value={clientProfile.dateOfContact}
-                  onChange={(e) => update('dateOfContact', e.target.value)}
-                  className={cn(inputBase, 'max-w-xs')}
-                />
-              </FormField>
               <FormField label="Current Living Situation">
-                <select
-                  name="current-living-situation"
-                  aria-label="Current Living Situation"
+                <CodeSelect
+                  ariaLabel="Current Living Situation"
                   value={clientProfile.currentLivingSituation}
-                  onChange={(e) => update('currentLivingSituation', e.target.value as CurrentLivingSituationOption | '')}
+                  onChange={(v) => update('currentLivingSituation', v)}
+                  options={LIVING_SITUATION_OPTIONS}
                   className={selectBase}
-                >
-                  <option value="">Select</option>
-                  {CURRENT_LIVING_SITUATION_OPTIONS.map((o) => (
-                    <option key={o} value={o}>{o}</option>
-                  ))}
-                </select>
-              </FormField>
-              <FormField label="Location Details">
-                <input
-                  type="text"
-                  name="location-details"
-                  aria-label="Location Details"
-                  value={clientProfile.locationDetails}
-                  onChange={(e) => update('locationDetails', e.target.value)}
-                  className={inputBase}
-                  placeholder="Optional"
                 />
               </FormField>
+
+              {clientProfile.currentLivingSituation === 'rental_with_ongoing_subsidy' && (
+                <FormField label="Rental Subsidy Type">
+                  <CodeSelect
+                    ariaLabel="Rental Subsidy Type"
+                    value={clientProfile.clsRentalSubsidyType}
+                    onChange={(v) => update('clsRentalSubsidyType', v)}
+                    options={HMIS_RENTAL_SUBSIDY_OPTIONS}
+                    className={cn(selectBase, 'max-w-xs')}
+                  />
+                </FormField>
+              )}
+
               <FormField label="Living Situation Verified By">
                 <input
                   type="text"
@@ -3293,92 +3277,69 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                 />
               </FormField>
 
-              {clientProfile.currentLivingSituation === 'Rental by client, with ongoing housing subsidy' && (
-                <FormField label="Rental Subsidy Type">
-                  <select
-                    name="rental-subsidy-type"
-                    aria-label="Rental Subsidy Type"
-                    value={clientProfile.clsRentalSubsidyType}
-                    onChange={(e) => update('clsRentalSubsidyType', e.target.value as RentalSubsidyTypeOption | '')}
-                    className={cn(selectBase, 'max-w-xs')}
-                  >
-                    <option value="">Select</option>
-                    {RENTAL_SUBSIDY_TYPE_OPTIONS.map((o) => (
-                      <option key={o} value={o}>{o}</option>
-                    ))}
-                  </select>
-                </FormField>
-              )}
-
-              {TEMP_OR_PERM_HOUSING_OPTIONS.includes(clientProfile.currentLivingSituation as CurrentLivingSituationOption) && (
+              {TEMP_OR_PERM_HOUSING_OPTIONS.includes(clientProfile.currentLivingSituation) && (
                 <>
                   <FormField label="Leaving within 14 days?">
-                    <select
-                      name="leaving-within-14-days"
-                      aria-label="Is client going to have to leave their current living situation within 14 days?"
+                    <CodeSelect
+                      ariaLabel="Is client going to have to leave their current living situation within 14 days?"
                       value={clientProfile.leavingWithin14Days}
-                      onChange={(e) => update('leavingWithin14Days', e.target.value as YesNoOption)}
+                      onChange={(v) => update('leavingWithin14Days', v)}
+                      options={YES_NO_DK_OPTIONS}
                       className={cn(selectBase, 'max-w-xs')}
-                    >
-                      <option value="">Select</option>
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
+                    />
                   </FormField>
-                  <FormField label="Subsequent residence identified?">
-                    <select
-                      name="subsequent-residence-identified"
-                      aria-label="Has a subsequent residence been identified?"
-                      value={clientProfile.subsequentResidenceIdentified}
-                      onChange={(e) => update('subsequentResidenceIdentified', e.target.value as YesNoOption)}
-                      className={cn(selectBase, 'max-w-xs')}
-                    >
-                      <option value="">Select</option>
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
-                  </FormField>
+                  {clientProfile.leavingWithin14Days === '1' && (
+                    <FormField label="Subsequent residence identified?">
+                      <CodeSelect
+                        ariaLabel="Has a subsequent residence been identified?"
+                        value={clientProfile.subsequentResidenceIdentified}
+                        onChange={(v) => update('subsequentResidenceIdentified', v)}
+                        options={YES_NO_DK_OPTIONS}
+                        className={cn(selectBase, 'max-w-xs')}
+                      />
+                    </FormField>
+                  )}
                   <FormField label="Resources for permanent housing?">
-                    <select
-                      name="resources-for-housing"
-                      aria-label="Does individual or family have resources or support networks to obtain other permanent housing?"
+                    <CodeSelect
+                      ariaLabel="Does individual or family have resources or support networks to obtain other permanent housing?"
                       value={clientProfile.resourcesForHousing}
-                      onChange={(e) => update('resourcesForHousing', e.target.value as YesNoOption)}
+                      onChange={(v) => update('resourcesForHousing', v)}
+                      options={YES_NO_DK_OPTIONS}
                       className={cn(selectBase, 'max-w-xs')}
-                    >
-                      <option value="">Select</option>
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
+                    />
                   </FormField>
                   <FormField label="Lease in last 60 days?">
-                    <select
-                      name="lease-in-last-60-days"
-                      aria-label="Has the client had a lease or ownership interest in a permanent housing unit in the last 60 days?"
+                    <CodeSelect
+                      ariaLabel="Has the client had a lease or ownership interest in a permanent housing unit in the last 60 days?"
                       value={clientProfile.leaseInLast60Days}
-                      onChange={(e) => update('leaseInLast60Days', e.target.value as YesNoOption)}
+                      onChange={(v) => update('leaseInLast60Days', v)}
+                      options={YES_NO_DK_OPTIONS}
                       className={cn(selectBase, 'max-w-xs')}
-                    >
-                      <option value="">Select</option>
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
+                    />
                   </FormField>
                   <FormField label="Moved 2+ times in last 60 days?">
-                    <select
-                      name="moved-twice-in-60-days"
-                      aria-label="Has the client moved 2 or more times in the last 60 days?"
+                    <CodeSelect
+                      ariaLabel="Has the client moved 2 or more times in the last 60 days?"
                       value={clientProfile.movedTwiceIn60Days}
-                      onChange={(e) => update('movedTwiceIn60Days', e.target.value as YesNoOption)}
+                      onChange={(v) => update('movedTwiceIn60Days', v)}
+                      options={YES_NO_DK_OPTIONS}
                       className={cn(selectBase, 'max-w-xs')}
-                    >
-                      <option value="">Select</option>
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
+                    />
                   </FormField>
                 </>
               )}
+
+              <FormField label="Location Details">
+                <input
+                  type="text"
+                  name="location-details"
+                  aria-label="Location Details"
+                  value={clientProfile.locationDetails}
+                  onChange={(e) => update('locationDetails', e.target.value)}
+                  className={inputBase}
+                  placeholder="Optional"
+                />
+              </FormField>
             </SectionCard>
 
             {/* Coordinated Entry Event (repeatable) */}
@@ -3660,7 +3621,7 @@ export default function App() {
       id: generateClientId(),
       createdAt: todayISO(),
       caseManager: 'Unassigned',
-      profile: { ...EMPTY_PROFILE, dateOfContact: todayISO() },
+      profile: { ...EMPTY_PROFILE },
     }
     upsertClient(next)
     navigateToClient(next.id)
