@@ -1016,53 +1016,18 @@ const COC_CODE_PATTERN = /^[A-Z]{2}-\d{3}$/
 
 function validateProfile(p: ClientProfile): string[] {
   const errs: string[] = []
-  // Required data-quality / enum fields
+  // Required: Name/DOB data-quality markers, Sex, and Race/Ethnicity. The name and DOB
+  // values themselves are optional — the quality code records why one is missing.
   if (!p.nameDataQuality) errs.push('Name Data Quality')
-  if (!p.ssnDataQuality) errs.push('SSN Data Quality')
   if (!p.dobDataQuality) errs.push('DOB Data Quality')
+  if (!p.sex) errs.push('Sex')
+  if (p.raceEthnicity.length === 0) errs.push('Race and Ethnicity')
+  // Consistency checks — only fire when a value is entered
   // DOB codes 8/9/99 are not valid when a date is entered
   if (p.dob && (p.dobDataQuality === '8' || p.dobDataQuality === '9' || p.dobDataQuality === '99')) {
     errs.push('DOB conflicts with DOB Data Quality')
   }
-  if (p.raceEthnicity.length === 0) errs.push('Race and Ethnicity')
-  if (!p.veteranStatus) errs.push('Veteran Status')
-  if (!p.disablingCondition) errs.push('Disabling Condition')
-  if (!p.projectStartDate?.trim()) errs.push('Project Start Date')
-  if (!p.destinationType) errs.push('Destination Type')
-  if (p.destinationType === 'other' && !p.destinationOtherDescription?.trim()) errs.push('Other Residence Description')
-  if (!p.relationshipToHoH) errs.push('Relationship to Head of Household')
-  if (!p.cocCode?.trim()) errs.push('CoC Code')
-  else if (!COC_CODE_PATTERN.test(p.cocCode.trim())) errs.push('CoC Code format (XX-XXX)')
-  if (!p.sex) errs.push('Sex')
-  if (!p.priorResidenceType) errs.push('Prior Living Situation')
-  if (!p.lengthOfStay) errs.push('Length of Stay')
-  if (!p.timesHomelessPast3Years) errs.push('Times Homeless (past 3 years)')
-  if (!p.monthsHomelessPast3Years) errs.push('Months Homeless (past 3 years)')
-  // Income / Non-Cash / Insurance
-  if (!p.income.informationDate?.trim()) errs.push('Income Information Date')
-  if (!p.income.fromAnySource) errs.push('Income from Any Source')
-  if (!p.nonCash.informationDate?.trim()) errs.push('Non-Cash Information Date')
-  if (!p.nonCash.fromAnySource) errs.push('Non-Cash Benefit from Any Source')
-  if (!p.insurance.informationDate?.trim()) errs.push('Insurance Information Date')
-  if (!p.insurance.covered) errs.push('Covered by Health Insurance')
-  // Disability & health conditions (each is its own section with its own date)
-  if (!p.physicalDisabilityInfoDate?.trim()) errs.push('Physical Disability Information Date')
-  if (!p.physicalDisability) errs.push('Physical Disability')
-  if (!p.developmentalDisabilityInfoDate?.trim()) errs.push('Developmental Disability Information Date')
-  if (!p.developmentalDisability) errs.push('Developmental Disability')
-  if (!p.chronicHealthInfoDate?.trim()) errs.push('Chronic Health Condition Information Date')
-  if (!p.chronicHealthCondition) errs.push('Chronic Health Condition')
-  if (!p.hivAidsInfoDate?.trim()) errs.push('HIV/AIDS Information Date')
-  if (!p.hivAids) errs.push('HIV/AIDS')
-  if (!p.mentalHealthInfoDate?.trim()) errs.push('Mental Health Disorder Information Date')
-  if (!p.mentalHealthDisorder) errs.push('Mental Health Disorder')
-  if (!p.substanceUseInfoDate?.trim()) errs.push('Substance Use Disorder Information Date')
-  if (!p.substanceUseDisorder) errs.push('Substance Use Disorder')
-  // Domestic violence
-  if (!p.dvInfoDate?.trim()) errs.push('DV Information Date')
-  if (!p.survivorOfDV) errs.push('Survivor of Domestic Violence')
-  // Current Living Situation (Assessments tab)
-  if (!p.clsInformationDate?.trim()) errs.push('Current Living Situation Information Date')
+  if (p.cocCode?.trim() && !COC_CODE_PATTERN.test(p.cocCode.trim())) errs.push('CoC Code format (XX-XXX)')
   return errs
 }
 
@@ -1088,8 +1053,9 @@ function clientDisplayName(p: ClientProfile): string {
 }
 
 function deriveClientStatus(p: ClientProfile): ClientStatus {
-  const hasName = !!(p.firstName?.trim() || p.lastName?.trim())
-  if (!hasName) return 'Draft'
+  // A nameless client still counts as started once a Name Data Quality code is chosen
+  const hasIdentity = !!(p.firstName?.trim() || p.lastName?.trim() || p.nameDataQuality)
+  if (!hasIdentity) return 'Draft'
   if (validateProfile(p).length === 0) return 'Complete'
   return 'Active'
 }
@@ -2869,7 +2835,7 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                   <input type="text" inputMode="numeric" maxLength={4} value={ssnParts[2]} onChange={(e) => setSsnParts(ssnParts[0], ssnParts[1], e.target.value)} className={cn(inputBase, 'w-20 text-center')} placeholder="0000" />
                 </div>
               </FormField>
-              <FormField label="SSN Data Quality" required error={!clientProfile.ssnDataQuality ? 'Required' : undefined}>
+              <FormField label="SSN Data Quality">
                 <CodeSelect ariaLabel="SSN Data Quality" value={clientProfile.ssnDataQuality} onChange={(v) => update('ssnDataQuality', v as DataQualityCode | '')} options={SSN_DQ_OPTIONS} className={selectBase} />
               </FormField>
             </SectionCard>
@@ -2911,21 +2877,21 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
 
             {/* 5. Veteran Status */}
             <SectionCard id="veteran_status" title="Veteran Status">
-              <FormField label="Veteran Status" required error={!clientProfile.veteranStatus ? 'Required' : undefined}>
+              <FormField label="Veteran Status">
                 <CodeSelect ariaLabel="Veteran Status" value={clientProfile.veteranStatus} onChange={(v) => update('veteranStatus', v as VeteranCode | '')} options={VETERAN_STATUS_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
             </SectionCard>
 
             {/* 6. Disabling Condition */}
             <SectionCard id="disabling_condition" title="Disabling Condition">
-              <FormField label="Disabling Condition" required error={!clientProfile.disablingCondition ? 'Required' : undefined}>
+              <FormField label="Disabling Condition">
                 <CodeSelect ariaLabel="Disabling Condition" value={clientProfile.disablingCondition} onChange={(v) => update('disablingCondition', v as DisablingCode | '')} options={DISABLING_CONDITION_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
             </SectionCard>
 
             {/* 7. Project Enrollment Dates */}
             <SectionCard id="enrollment_dates" title="Project Enrollment Dates">
-              <FormField label="Project Start Date" required error={!clientProfile.projectStartDate ? 'Required' : undefined}>
+              <FormField label="Project Start Date">
                 <input type="date" value={clientProfile.projectStartDate} onChange={(e) => update('projectStartDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
               <FormField label="Project Exit Date">
@@ -2967,7 +2933,7 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
 
             {/* 8. Destination at Exit */}
             <SectionCard id="destination" title="Destination at Exit">
-              <FormField label="Type of Residence" required error={!clientProfile.destinationType ? 'Required' : undefined}>
+              <FormField label="Type of Residence">
                 <CodeSelect ariaLabel="Destination Type of Residence" value={clientProfile.destinationType} onChange={(v) => update('destinationType', v)} options={LIVING_SITUATION_OPTIONS} className={selectBase} />
               </FormField>
               {clientProfile.destinationType === 'rental_with_ongoing_subsidy' && (
@@ -2976,7 +2942,7 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                 </FormField>
               )}
               {clientProfile.destinationType === 'other' && (
-                <FormField label="Other Residence Description" required error={!clientProfile.destinationOtherDescription.trim() ? 'Required' : undefined}>
+                <FormField label="Other Residence Description">
                   <input type="text" value={clientProfile.destinationOtherDescription} onChange={(e) => update('destinationOtherDescription', e.target.value)} className={inputBase} placeholder="Describe the residence" />
                 </FormField>
               )}
@@ -2984,21 +2950,21 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
 
             {/* 9. Relationship to Head of Household */}
             <SectionCard id="relationship_hoh" title="Relationship to Head of Household">
-              <FormField label="Relationship to HoH" required error={!clientProfile.relationshipToHoH ? 'Required' : undefined}>
+              <FormField label="Relationship to HoH">
                 <CodeSelect ariaLabel="Relationship to Head of Household" value={clientProfile.relationshipToHoH} onChange={(v) => update('relationshipToHoH', v as RelationshipCode | '')} options={RELATIONSHIP_TO_HOH_OPTIONS} className={selectBase} />
               </FormField>
             </SectionCard>
 
             {/* 10. CoC Code */}
             <SectionCard id="coc_code" title="CoC Code">
-              <FormField label="CoC Code" required error={!clientProfile.cocCode.trim() ? 'Required' : !COC_CODE_PATTERN.test(clientProfile.cocCode.trim()) ? 'Format must be XX-XXX (e.g., CA-501)' : undefined}>
+              <FormField label="CoC Code" error={clientProfile.cocCode.trim() && !COC_CODE_PATTERN.test(clientProfile.cocCode.trim()) ? 'Format must be XX-XXX (e.g., CA-501)' : undefined}>
                 <input type="text" value={clientProfile.cocCode} onChange={(e) => update('cocCode', e.target.value.toUpperCase())} className={cn(inputBase, 'max-w-xs')} placeholder="CA-501" />
               </FormField>
             </SectionCard>
 
             {/* 11. Prior Living Situation */}
             <SectionCard id="prior_living_situation" title="Prior Living Situation">
-              <FormField label="Type of Residence" required error={!clientProfile.priorResidenceType ? 'Required' : undefined}>
+              <FormField label="Type of Residence">
                 <CodeSelect ariaLabel="Prior Type of Residence" value={clientProfile.priorResidenceType} onChange={(v) => update('priorResidenceType', v)} options={LIVING_SITUATION_OPTIONS} className={selectBase} />
               </FormField>
               {clientProfile.priorResidenceType === 'rental_with_ongoing_subsidy' && (
@@ -3006,26 +2972,26 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                   <CodeSelect ariaLabel="Prior Rental Subsidy Type" value={clientProfile.priorRentalSubsidyType} onChange={(v) => update('priorRentalSubsidyType', v)} options={HMIS_RENTAL_SUBSIDY_OPTIONS} className={selectBase} />
                 </FormField>
               )}
-              <FormField label="Length of Stay" required error={!clientProfile.lengthOfStay ? 'Required' : undefined}>
+              <FormField label="Length of Stay">
                 <CodeSelect ariaLabel="Length of Stay in Prior Living Situation" value={clientProfile.lengthOfStay} onChange={(v) => update('lengthOfStay', v as LengthOfStayCode | '')} options={LENGTH_OF_STAY_OPTIONS} className={selectBase} />
               </FormField>
               <FormField label="Homelessness Start Date">
                 <input type="date" value={clientProfile.homelessnessStartDate} onChange={(e) => update('homelessnessStartDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <FormField label="Times Homeless (past 3 yrs)" required error={!clientProfile.timesHomelessPast3Years ? 'Required' : undefined}>
+              <FormField label="Times Homeless (past 3 yrs)">
                 <CodeSelect ariaLabel="Number of Times Homeless in Past 3 Years" value={clientProfile.timesHomelessPast3Years} onChange={(v) => update('timesHomelessPast3Years', v as TimesHomelessCode | '')} options={TIMES_HOMELESS_OPTIONS} className={selectBase} />
               </FormField>
-              <FormField label="Months Homeless (past 3 yrs)" required error={!clientProfile.monthsHomelessPast3Years ? 'Required' : undefined}>
+              <FormField label="Months Homeless (past 3 yrs)">
                 <CodeSelect ariaLabel="Total Months Homeless in Past 3 Years" value={clientProfile.monthsHomelessPast3Years} onChange={(v) => update('monthsHomelessPast3Years', v)} options={MONTHS_HOMELESS_OPTIONS} className={selectBase} />
               </FormField>
             </SectionCard>
 
             {/* Income from Any Source */}
             <SectionCard id="income" title="Income from Any Source">
-              <FormField label="Information Date" required error={!clientProfile.income.informationDate ? 'Required' : undefined}>
+              <FormField label="Information Date">
                 <input type="date" value={clientProfile.income.informationDate} onChange={(e) => updateIncomeField('informationDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <FormField label="Income from Any Source" required error={!clientProfile.income.fromAnySource ? 'Required' : undefined}>
+              <FormField label="Income from Any Source">
                 <CodeSelect ariaLabel="Income from Any Source" value={clientProfile.income.fromAnySource} onChange={(v) => updateIncomeField('fromAnySource', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
               {clientProfile.income.fromAnySource === '1' && (
@@ -3064,10 +3030,10 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
 
             {/* Non-Cash Benefits */}
             <SectionCard id="non_cash_benefits" title="Non-Cash Benefits">
-              <FormField label="Information Date" required error={!clientProfile.nonCash.informationDate ? 'Required' : undefined}>
+              <FormField label="Information Date">
                 <input type="date" value={clientProfile.nonCash.informationDate} onChange={(e) => updateNonCashField('informationDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <FormField label="Benefit from Any Source" required error={!clientProfile.nonCash.fromAnySource ? 'Required' : undefined}>
+              <FormField label="Benefit from Any Source">
                 <CodeSelect ariaLabel="Non-Cash Benefit from Any Source" value={clientProfile.nonCash.fromAnySource} onChange={(v) => updateNonCashField('fromAnySource', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
               {clientProfile.nonCash.fromAnySource === '1' && (
@@ -3089,10 +3055,10 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
 
             {/* Health Insurance */}
             <SectionCard id="health_insurance" title="Health Insurance">
-              <FormField label="Information Date" required error={!clientProfile.insurance.informationDate ? 'Required' : undefined}>
+              <FormField label="Information Date">
                 <input type="date" value={clientProfile.insurance.informationDate} onChange={(e) => updateInsuranceField('informationDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <FormField label="Covered by Health Insurance" required error={!clientProfile.insurance.covered ? 'Required' : undefined}>
+              <FormField label="Covered by Health Insurance">
                 <CodeSelect ariaLabel="Covered by Health Insurance" value={clientProfile.insurance.covered} onChange={(v) => updateInsuranceField('covered', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
               {clientProfile.insurance.covered === '1' && (
@@ -3119,10 +3085,10 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
 
             {/* Physical Disability */}
             <SectionCard id="physical_disability" title="Physical Disability">
-              <FormField label="Information Date" required error={!clientProfile.physicalDisabilityInfoDate ? 'Required' : undefined}>
+              <FormField label="Information Date">
                 <input type="date" value={clientProfile.physicalDisabilityInfoDate} onChange={(e) => update('physicalDisabilityInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <FormField label="Physical Disability" required error={!clientProfile.physicalDisability ? 'Required' : undefined}>
+              <FormField label="Physical Disability">
                 <CodeSelect ariaLabel="Physical Disability" value={clientProfile.physicalDisability} onChange={(v) => update('physicalDisability', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
               {clientProfile.physicalDisability === '1' && (
@@ -3134,20 +3100,20 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
 
             {/* Developmental Disability */}
             <SectionCard id="developmental_disability" title="Developmental Disability">
-              <FormField label="Information Date" required error={!clientProfile.developmentalDisabilityInfoDate ? 'Required' : undefined}>
+              <FormField label="Information Date">
                 <input type="date" value={clientProfile.developmentalDisabilityInfoDate} onChange={(e) => update('developmentalDisabilityInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <FormField label="Developmental Disability" required error={!clientProfile.developmentalDisability ? 'Required' : undefined}>
+              <FormField label="Developmental Disability">
                 <CodeSelect ariaLabel="Developmental Disability" value={clientProfile.developmentalDisability} onChange={(v) => update('developmentalDisability', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
             </SectionCard>
 
             {/* Chronic Health Condition */}
             <SectionCard id="chronic_health_condition" title="Chronic Health Condition">
-              <FormField label="Information Date" required error={!clientProfile.chronicHealthInfoDate ? 'Required' : undefined}>
+              <FormField label="Information Date">
                 <input type="date" value={clientProfile.chronicHealthInfoDate} onChange={(e) => update('chronicHealthInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <FormField label="Chronic Health Condition" required error={!clientProfile.chronicHealthCondition ? 'Required' : undefined}>
+              <FormField label="Chronic Health Condition">
                 <CodeSelect ariaLabel="Chronic Health Condition" value={clientProfile.chronicHealthCondition} onChange={(v) => update('chronicHealthCondition', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
               {clientProfile.chronicHealthCondition === '1' && (
@@ -3159,20 +3125,20 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
 
             {/* HIV/AIDS */}
             <SectionCard id="hiv_aids" title="HIV/AIDS">
-              <FormField label="Information Date" required error={!clientProfile.hivAidsInfoDate ? 'Required' : undefined}>
+              <FormField label="Information Date">
                 <input type="date" value={clientProfile.hivAidsInfoDate} onChange={(e) => update('hivAidsInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <FormField label="HIV/AIDS" required error={!clientProfile.hivAids ? 'Required' : undefined}>
+              <FormField label="HIV/AIDS">
                 <CodeSelect ariaLabel="HIV/AIDS" value={clientProfile.hivAids} onChange={(v) => update('hivAids', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
             </SectionCard>
 
             {/* Mental Health Disorder */}
             <SectionCard id="mental_health_disorder" title="Mental Health Disorder">
-              <FormField label="Information Date" required error={!clientProfile.mentalHealthInfoDate ? 'Required' : undefined}>
+              <FormField label="Information Date">
                 <input type="date" value={clientProfile.mentalHealthInfoDate} onChange={(e) => update('mentalHealthInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <FormField label="Mental Health Disorder" required error={!clientProfile.mentalHealthDisorder ? 'Required' : undefined}>
+              <FormField label="Mental Health Disorder">
                 <CodeSelect ariaLabel="Mental Health Disorder" value={clientProfile.mentalHealthDisorder} onChange={(v) => update('mentalHealthDisorder', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
               {clientProfile.mentalHealthDisorder === '1' && (
@@ -3184,10 +3150,10 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
 
             {/* Substance Use Disorder */}
             <SectionCard id="substance_use_disorder" title="Substance Use Disorder">
-              <FormField label="Information Date" required error={!clientProfile.substanceUseInfoDate ? 'Required' : undefined}>
+              <FormField label="Information Date">
                 <input type="date" value={clientProfile.substanceUseInfoDate} onChange={(e) => update('substanceUseInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <FormField label="Substance Use Disorder" required error={!clientProfile.substanceUseDisorder ? 'Required' : undefined}>
+              <FormField label="Substance Use Disorder">
                 <CodeSelect ariaLabel="Substance Use Disorder" value={clientProfile.substanceUseDisorder} onChange={(v) => update('substanceUseDisorder', v)} options={SUBSTANCE_USE_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
               {['1', '2', '3'].includes(clientProfile.substanceUseDisorder) && (
@@ -3199,10 +3165,10 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
 
             {/* Survivor of Domestic Violence */}
             <SectionCard id="domestic_violence" title="Survivor of Domestic Violence">
-              <FormField label="Information Date" required error={!clientProfile.dvInfoDate ? 'Required' : undefined}>
+              <FormField label="Information Date">
                 <input type="date" value={clientProfile.dvInfoDate} onChange={(e) => update('dvInfoDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
               </FormField>
-              <FormField label="Survivor of Domestic Violence" required error={!clientProfile.survivorOfDV ? 'Required' : undefined}>
+              <FormField label="Survivor of Domestic Violence">
                 <CodeSelect ariaLabel="Survivor of Domestic Violence" value={clientProfile.survivorOfDV} onChange={(v) => update('survivorOfDV', v)} options={YES_NO_DK_OPTIONS} className={cn(selectBase, 'max-w-md')} />
               </FormField>
               {clientProfile.survivorOfDV === '1' && (
@@ -3235,7 +3201,7 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
           {currentSectionId === 'assessments' && (
             <>
             <SectionCard id="current-living" title="Current Living Situation">
-              <FormField label="Information Date" required error={!clientProfile.clsInformationDate ? 'Required' : undefined}>
+              <FormField label="Information Date">
                 <input
                   type="date"
                   aria-label="Information Date"
@@ -3364,10 +3330,10 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                         </button>
                       </div>
                       <div className="space-y-3">
-                        <FormField label="Date of Event" required error={!ev.eventDate ? 'Required' : undefined}>
+                        <FormField label="Date of Event">
                           <input type="date" aria-label="Date of Event" value={ev.eventDate} onChange={(e) => updateCEEvent(ev.id, 'eventDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
                         </FormField>
-                        <FormField label="Event" required error={!ev.eventType ? 'Required' : undefined}>
+                        <FormField label="Event">
                           <CodeSelect ariaLabel="Event" value={ev.eventType} onChange={(v) => updateCEEvent(ev.id, 'eventType', v)} options={CE_EVENT_OPTIONS} className={selectBase} />
                         </FormField>
                         {ev.eventType === '2' && (
@@ -3426,19 +3392,19 @@ function IntakeForm({ clientId, onBack }: { clientId: string; onBack: () => void
                         </button>
                       </div>
                       <div className="space-y-3">
-                        <FormField label="Date of Assessment" required error={!a.assessmentDate ? 'Required' : undefined}>
+                        <FormField label="Date of Assessment">
                           <input type="date" aria-label="Date of Assessment" value={a.assessmentDate} onChange={(e) => updateCEAssessment(a.id, 'assessmentDate', e.target.value)} className={cn(inputBase, 'max-w-xs')} />
                         </FormField>
-                        <FormField label="Assessment Location" required error={!a.assessmentLocation.trim() ? 'Required' : undefined}>
+                        <FormField label="Assessment Location">
                           <input type="text" aria-label="Assessment Location" value={a.assessmentLocation} onChange={(e) => updateCEAssessment(a.id, 'assessmentLocation', e.target.value)} className={inputBase} placeholder="Location" />
                         </FormField>
-                        <FormField label="Assessment Type" required error={!a.assessmentType ? 'Required' : undefined}>
+                        <FormField label="Assessment Type">
                           <CodeSelect ariaLabel="Assessment Type" value={a.assessmentType} onChange={(v) => updateCEAssessment(a.id, 'assessmentType', v)} options={CE_ASSESSMENT_TYPE_OPTIONS} className={cn(selectBase, 'max-w-md')} />
                         </FormField>
-                        <FormField label="Assessment Level" required error={!a.assessmentLevel ? 'Required' : undefined}>
+                        <FormField label="Assessment Level">
                           <CodeSelect ariaLabel="Assessment Level" value={a.assessmentLevel} onChange={(v) => updateCEAssessment(a.id, 'assessmentLevel', v)} options={CE_ASSESSMENT_LEVEL_OPTIONS} className={cn(selectBase, 'max-w-md')} />
                         </FormField>
-                        <FormField label="Prioritization Status" required error={!a.prioritizationStatus ? 'Required' : undefined}>
+                        <FormField label="Prioritization Status">
                           <CodeSelect ariaLabel="Prioritization Status" value={a.prioritizationStatus} onChange={(v) => updateCEAssessment(a.id, 'prioritizationStatus', v)} options={CE_PRIORITIZATION_OPTIONS} className={selectBase} />
                         </FormField>
                         <FormField label="Questions / Answers / Results">
